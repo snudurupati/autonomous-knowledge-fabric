@@ -33,3 +33,10 @@ and update account risk score in <60 seconds.
   Claude Code for changes to take effect
 - Sprint rhythm: /sprint-start → work → /sprint-end
 - Run /compact mid-sprint if Claude starts forgetting context
+
+## Running Scripts
+- Always run scripts as modules from project root:
+  `python -m pipelines.script_name`
+- Never use `python pipelines/script_name.py` directly
+- All packages have __init__.py files in models/, pipelines/, 
+  graph/, scoring/, observability/
