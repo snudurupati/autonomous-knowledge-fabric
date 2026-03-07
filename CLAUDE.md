@@ -22,5 +22,6 @@ and update account risk score in <60 seconds.
 ## Conventions
 - All Pydantic models live in /models
 - Pathway pipelines live in /pipelines
-- Tests use pytest, run via `pytest tests/`
+- Tests use pytest, run via `.venv312/bin/pytest tests/`
+- Always use `.venv312/bin/python` (Python 3.12) — the default `.venv` is Python 3.14 which lacks pyarrow/Pathway wheels
 - Docker stack starts with `docker compose up -d`
