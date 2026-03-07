@@ -10,7 +10,11 @@ Do the following in order:
    - Real output observed (latency numbers, test results)
    - Next sprint goal
 
-3. Show a git diff of requirements.txt so I can see exactly 
-   what new libraries were added this sprint
+3. Run `git diff requirements.txt` and show me what new 
+   libraries were added this sprint
 
-4. Ask if any new conventions should be added to CLAUDE.md
+4. Run `git add requirements.txt HANDOFF.md` and commit with 
+   message: "Sprint [number] complete — update dependencies 
+   and handoff notes"
+
+5. Ask if any new conventions should be added to CLAUDE.md
