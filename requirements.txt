@@ -25,6 +25,7 @@ decorator==5.2.1
 deltalake==0.17.4
 diskcache==5.6.3
 executing==2.2.1
+Faker==40.8.0
 fastapi==0.135.1
 feedparser==6.0.12
 frozenlist==1.8.0

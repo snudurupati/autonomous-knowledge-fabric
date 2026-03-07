@@ -1,7 +1,7 @@
 # Sprint Handoff Notes
 
 ## Sprint Completed
-Sprint 3 (Week 1, Day 3) — 2026-03-07
+Sprint 4 (Week 1, Day 4) — 2026-03-07
 
 ## What Was Built
 
@@ -15,7 +15,6 @@ Sprint 3 (Week 1, Day 3) — 2026-03-07
 - `AccountEvent` model with:
   - `company_name` normalization (strip, lowercase, remove legal suffixes via regex)
   - `model_validator` requiring at least one of: `company_domain`, `cik_number`, `account_id`
-- `models/__init__.py` added
 - 4 pytest tests: 4 passed, 0 failed (0.04s)
 
 ### Sprint 3 — Live SEC EDGAR ingestion pipeline (`pipelines/sec_ingestion.py`)
@@ -25,43 +24,60 @@ Sprint 3 (Week 1, Day 3) — 2026-03-07
 - Deduplicates by `entry_id` across polls
 - Extracts `AccountEvent` per filing with risk-signal keyword matching
 - Pathway connector: `SECFeedSubject(pw.io.python.ConnectorSubject)` → `pw.io.python.read` → `pw.io.subscribe`
-- `docker-compose.yml` fixed from shell-script corruption to valid YAML
+
+### Sprint 4 — Synthetic CRM & support event generator (`pipelines/synthetic_crm.py`)
+- `SEED_COMPANIES`: 5 real public companies (Apple, Microsoft, Tesla, JPMorgan, Walmart) with domain + Salesforce account ID
+- `SalesforceEventGenerator`: emits `AccountEvent` with `Opportunity_Stage`, `ARR`, `Contract_Renewal_Date`; fires `CONTRACT_RENEWAL_AT_RISK` when stage is "At Risk" or "Churned"
+- `ZendeskEventGenerator`: emits `AccountEvent` with `Case_ID`, `Case_Priority`, `Escalation_Time`, `SLA_Breach`; fires `CRITICAL_SUPPORT` when priority is "Critical"
+- `run()` loop alternates SF/ZD every 10 seconds, random company per event
+- `tests/test_synthetic_crm.py`: 47 tests (7 unit + 40 parametrized across all companies × all stages/priorities)
 
 ## What Broke and How It Was Fixed
 
 | Problem | Fix |
 |---|---|
-| `feedparser` returned 0 entries from SEC | Added `User-Agent: stream-graph-rag research@example.com` header (SEC rate-limit policy) |
-| `docker-compose.yml` was a shell script, not YAML | Rewrote to proper YAML; obsolete `version:` key warns but is harmless |
+| `feedparser` returned 0 entries from SEC | Added `User-Agent: stream-graph-rag research@example.com` header |
+| `docker-compose.yml` was a shell script, not YAML | Rewrote to proper YAML |
 | `pw.debug.table_from_markdown` failed with multi-word fields | Switched to `pw.debug.table_from_pandas` |
 | Default `.venv` is Python 3.14 — lacks pyarrow wheels | Use `.venv312/` (Python 3.12) for all commands |
+| `faker` not installed in `.venv312` | `pip install faker` (now in requirements.txt as `Faker==40.8.0`) |
 
 ## Real Output Observed
 
 ```
 pytest tests/ -v
-4 passed in 0.04s
+51 passed in 0.09s
 
-[poll] fetched 20 entries, 20 new, 20 total seen
-=== AccountEvent #1 ===
+=== Event #1 (SALESFORCE) ===
 {
-  "event_id": "...",
-  "source": "SEC_EDGAR",
-  "company_name": "reservoir media",   ← normalized from "Reservoir Media, Inc."
-  "cik_number": "1824403",
-  "risk_signals": [],
-  "raw_text": "...",
-  ...
+  "source": "SALESFORCE", "company_name": "jpmorgan",
+  "account_id": "SF-004", "risk_signals": [],
+  "raw_text": "{\"Opportunity_Stage\": \"Negotiation\", \"ARR\": 924498.16, \"Contract_Renewal_Date\": \"2026-05-06\"}"
+}
+
+=== Event #2 (ZENDESK) ===
+{
+  "source": "ZENDESK", "company_name": "tesla",
+  "account_id": "SF-003", "risk_signals": [],
+  "raw_text": "{\"Case_Priority\": \"Low\", \"SLA_Breach\": false}"
+}
+
+=== Event #3 (SALESFORCE) ===
+{
+  "source": "SALESFORCE", "company_name": "tesla",
+  "account_id": "SF-003", "risk_signals": ["CONTRACT_RENEWAL_AT_RISK"],
+  "raw_text": "{\"Opportunity_Stage\": \"At Risk\", \"ARR\": 1552063.51, \"Contract_Renewal_Date\": \"2026-05-15\"}"
 }
 ```
 
-Latency from SEC filing to printed `AccountEvent`: < 1 second (within a single poll cycle; end-to-end SEC → Memgraph not yet wired).
+Event emission latency: ~0ms (in-process generation, no I/O). Inter-event interval: 10 seconds.
 
 ## Next Sprint Goal
 
-**Sprint 4 — Graph write-back + risk score**
-- Wire `AccountEvent` output into Memgraph via `graph/` client helpers
-- `MERGE (a:Account {cik: $cik}) SET a.risk_score = $score, a.updated_at = $ts`
-- Add `graph/memgraph_client.py` with connection pooling (pymgclient or neo4j-driver)
-- End-to-end latency target: SEC filing → Memgraph node update < 60 seconds
-- Add integration test: `tests/test_graph_write.py`
+**Sprint 5 — Graph write-back + risk score**
+- Wire both `sec_ingestion.py` and `synthetic_crm.py` outputs into Memgraph
+- `graph/memgraph_client.py`: connection pooling via `pymgclient`, `upsert_account()` helper
+- Cypher: `MERGE (a:Account {cik: $cik}) SET a.risk_score = $score, a.updated_at = $ts`
+- Add `RiskScoreCalculator`: weighted score from risk_signals list
+- End-to-end latency target: event emitted → Memgraph node updated < 60 seconds
+- Integration test: `tests/test_graph_write.py`
