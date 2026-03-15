@@ -1,7 +1,7 @@
 # Sprint Handoff Notes
 
 ## Sprint Completed
-Sprint 4 (Week 1, Day 4) — 2026-03-07
+Sprint 5 (Week 1 Wrap-up) — 2026-03-15
 
 ## What Was Built
 
@@ -32,6 +32,18 @@ Sprint 4 (Week 1, Day 4) — 2026-03-07
 - `run()` loop alternates SF/ZD every 10 seconds, random company per event
 - `tests/test_synthetic_crm.py`: 47 tests (7 unit + 40 parametrized across all companies × all stages/priorities)
 
+### Sprint 5 — Week 1 wrap-up & scaffolding for Week 2
+- Published Week 1 Substack post (`docs/weekly/week1-01.md`)
+- Updated CLAUDE.md with:
+  - `timeout` not available on macOS — use Python-native loop control
+  - Running scripts as modules from project root
+- Updated README
+- Created stub scaffolding files for Week 2 components:
+  - `graph/memgraph_client.py` — Bolt connection pool + Cypher helpers
+  - `scoring/account_health.py` — 4-signal weighted account health score
+  - `dashboard/app.py` — Streamlit account risk dashboard
+  - `baseline_rag/nightly_batch.py` — Pinecone + LlamaIndex nightly batch baseline
+
 ## What Broke and How It Was Fixed
 
 | Problem | Fix |
@@ -40,26 +52,20 @@ Sprint 4 (Week 1, Day 4) — 2026-03-07
 | `docker-compose.yml` was a shell script, not YAML | Rewrote to proper YAML |
 | `pw.debug.table_from_markdown` failed with multi-word fields | Switched to `pw.debug.table_from_pandas` |
 | Default `.venv` is Python 3.14 — lacks pyarrow wheels | Use `.venv312/` (Python 3.12) for all commands |
-| `faker` not installed in `.venv312` | `pip install faker` (now in requirements.txt as `Faker==40.8.0`) |
+| `faker` not installed in `.venv312` | `pip install faker` (now in requirements.txt) |
+| `.venv312/bin/pip` broken after project rename (still pointed to old path) | Use `python3.12 -m pip` instead of calling `pip` directly |
 
 ## Real Output Observed
 
 ```
 pytest tests/ -v
-51 passed in 0.09s
+51 passed in 0.13s
 
 === Event #1 (SALESFORCE) ===
 {
   "source": "SALESFORCE", "company_name": "jpmorgan",
   "account_id": "SF-004", "risk_signals": [],
   "raw_text": "{\"Opportunity_Stage\": \"Negotiation\", \"ARR\": 924498.16, \"Contract_Renewal_Date\": \"2026-05-06\"}"
-}
-
-=== Event #2 (ZENDESK) ===
-{
-  "source": "ZENDESK", "company_name": "tesla",
-  "account_id": "SF-003", "risk_signals": [],
-  "raw_text": "{\"Case_Priority\": \"Low\", \"SLA_Breach\": false}"
 }
 
 === Event #3 (SALESFORCE) ===
@@ -74,10 +80,10 @@ Event emission latency: ~0ms (in-process generation, no I/O). Inter-event interv
 
 ## Next Sprint Goal
 
-**Sprint 5 — Graph write-back + risk score**
-- Wire both `sec_ingestion.py` and `synthetic_crm.py` outputs into Memgraph
-- `graph/memgraph_client.py`: connection pooling via `pymgclient`, `upsert_account()` helper
+**Sprint 6 — Graph write-back + risk score (Week 2, Day 1)**
+- Implement `graph/memgraph_client.py`: connection pooling via `pymgclient`, `upsert_account()` helper
 - Cypher: `MERGE (a:Account {cik: $cik}) SET a.risk_score = $score, a.updated_at = $ts`
-- Add `RiskScoreCalculator`: weighted score from risk_signals list
+- Implement `scoring/account_health.py`: weighted score from risk_signals list (4 signals)
+- Wire `sec_ingestion.py` and `synthetic_crm.py` → Memgraph write-back
 - End-to-end latency target: event emitted → Memgraph node updated < 60 seconds
 - Integration test: `tests/test_graph_write.py`
