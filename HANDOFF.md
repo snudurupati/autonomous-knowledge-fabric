@@ -1,7 +1,7 @@
 # Sprint Handoff Notes
 
 ## Sprint Completed
-Sprint 5 (Week 1 Wrap-up) — 2026-03-15
+Sprint 6 (Week 2, Day 1) — 2026-03-15
 
 ## What Was Built
 
@@ -12,78 +12,78 @@ Sprint 5 (Week 1 Wrap-up) — 2026-03-15
 ### Sprint 2 — AccountEvent Pydantic schema (`models/account_event.py`)
 - `EventSource` enum: SEC_EDGAR, SALESFORCE, ZENDESK
 - `RiskSignal` enum: TAKEOVER_BID, EARNINGS_MISS, EXECUTIVE_DEPARTURE, CRITICAL_SUPPORT, CONTRACT_RENEWAL_AT_RISK
-- `AccountEvent` model with:
-  - `company_name` normalization (strip, lowercase, remove legal suffixes via regex)
-  - `model_validator` requiring at least one of: `company_domain`, `cik_number`, `account_id`
-- 4 pytest tests: 4 passed, 0 failed (0.04s)
+- `AccountEvent` model with `company_name` normalization and identifier validation
+- 4 pytest tests: 4 passed
 
 ### Sprint 3 — Live SEC EDGAR ingestion pipeline (`pipelines/sec_ingestion.py`)
-- Polls two SEC feeds every 30 seconds:
-  - Atom feed (20 current 8-Ks): `https://www.sec.gov/cgi-bin/browse-edgar?...&output=atom`
-  - EFTS JSON search (hostile takeover keyword): `https://efts.sec.gov/LATEST/search-index?...`
-- Deduplicates by `entry_id` across polls
-- Extracts `AccountEvent` per filing with risk-signal keyword matching
-- Pathway connector: `SECFeedSubject(pw.io.python.ConnectorSubject)` → `pw.io.python.read` → `pw.io.subscribe`
+- Polls Atom feed (20 8-Ks) + EFTS JSON (hostile takeover) every 30 seconds
+- Deduplicates by `entry_id`, extracts `AccountEvent` with risk-signal keyword matching
+- Pathway connector: `SECFeedSubject` → `pw.io.python.read` → `pw.io.subscribe`
 
 ### Sprint 4 — Synthetic CRM & support event generator (`pipelines/synthetic_crm.py`)
-- `SEED_COMPANIES`: 5 real public companies (Apple, Microsoft, Tesla, JPMorgan, Walmart) with domain + Salesforce account ID
-- `SalesforceEventGenerator`: emits `AccountEvent` with `Opportunity_Stage`, `ARR`, `Contract_Renewal_Date`; fires `CONTRACT_RENEWAL_AT_RISK` when stage is "At Risk" or "Churned"
-- `ZendeskEventGenerator`: emits `AccountEvent` with `Case_ID`, `Case_Priority`, `Escalation_Time`, `SLA_Breach`; fires `CRITICAL_SUPPORT` when priority is "Critical"
-- `run()` loop alternates SF/ZD every 10 seconds, random company per event
-- `tests/test_synthetic_crm.py`: 47 tests (7 unit + 40 parametrized across all companies × all stages/priorities)
+- 5 seed companies (Apple, Microsoft, Tesla, JPMorgan, Walmart)
+- `SalesforceEventGenerator` + `ZendeskEventGenerator` alternating every 10 seconds
+- 47 parametrized pytest tests: 47 passed
 
-### Sprint 5 — Week 1 wrap-up & scaffolding for Week 2
-- Published Week 1 Substack post (`docs/weekly/week1-01.md`)
-- Updated CLAUDE.md with:
-  - `timeout` not available on macOS — use Python-native loop control
-  - Running scripts as modules from project root
-- Updated README
-- Created stub scaffolding files for Week 2 components:
-  - `graph/memgraph_client.py` — Bolt connection pool + Cypher helpers
-  - `scoring/account_health.py` — 4-signal weighted account health score
-  - `dashboard/app.py` — Streamlit account risk dashboard
-  - `baseline_rag/nightly_batch.py` — Pinecone + LlamaIndex nightly batch baseline
+### Sprint 5 — Week 1 wrap-up & scaffolding
+- Published Week 1 Substack post, updated README and CLAUDE.md
+- Created stub files: `graph/memgraph_client.py`, `scoring/account_health.py`,
+  `dashboard/app.py`, `baseline_rag/nightly_batch.py`
+
+### Sprint 6 — Graph write-back via Bolt (`graph/memgraph_client.py`)
+- `MemgraphClient` class connecting to Memgraph on `bolt://localhost:7687` (`admin/admin`)
+- 3-retry backoff on `ServiceUnavailable` / `SessionExpired`
+- `upsert_account(event)`: `MERGE` on `company_name`, sets domain/cik/account_id/source/last_updated,
+  creates `RiskSignal` nodes + `HAS_SIGNAL` edges with timestamp
+- `upsert_event(event)`: calls `upsert_account` + creates raw `Event` node with `FILED` edge
+- `get_account_with_relationships(company_name)`: returns account + all 1-hop rels as dict
+- `pipelines/sec_ingestion.py`: calls `client.upsert_event()` per AccountEvent, prints
+  `Graph updated: {company} [{signals}] in {ms}ms`
+- `pipelines/synthetic_crm.py`: same write-back, `write_graph=True` by default
+- `tests/test_memgraph_client.py`: 7 integration tests against live Memgraph
 
 ## What Broke and How It Was Fixed
 
 | Problem | Fix |
 |---|---|
-| `feedparser` returned 0 entries from SEC | Added `User-Agent: stream-graph-rag research@example.com` header |
-| `docker-compose.yml` was a shell script, not YAML | Rewrote to proper YAML |
-| `pw.debug.table_from_markdown` failed with multi-word fields | Switched to `pw.debug.table_from_pandas` |
-| Default `.venv` is Python 3.14 — lacks pyarrow wheels | Use `.venv312/` (Python 3.12) for all commands |
-| `faker` not installed in `.venv312` | `pip install faker` (now in requirements.txt) |
-| `.venv312/bin/pip` broken after project rename (still pointed to old path) | Use `python3.12 -m pip` instead of calling `pip` directly |
+| `feedparser` returned 0 entries from SEC | Added `User-Agent` header |
+| `docker-compose.yml` was a shell script | Rewrote to proper YAML |
+| `pw.debug.table_from_markdown` failed with multi-word fields | Switched to `table_from_pandas` |
+| Default `.venv` is Python 3.14 — no pyarrow wheels | Use `.venv312/` (Python 3.12) |
+| `.venv312/bin/pip` broken after project rename | Use `python3.12 -m pip` |
+| `.venv312` accidentally committed (160MB binary) | `git filter-repo` + `.gitignore`, force-push |
+| Memgraph requires `admin/admin` auth (not no-auth) | Probed both auth configs before writing client |
+| `time` import shadowed by `time` parameter in `_on_change` | Aliased as `import time as time_module` |
+| `.venv312` wiped by `git filter-repo` history rewrite | Recreated from `requirements.txt` |
+| `neo4j` driver not in requirements | Installed + frozen (`neo4j==6.1.0`) |
 
 ## Real Output Observed
 
 ```
+pytest tests/test_memgraph_client.py -v
+7 passed in 0.56s
+
 pytest tests/ -v
-51 passed in 0.13s
+58 passed in 0.62s
 
-=== Event #1 (SALESFORCE) ===
-{
-  "source": "SALESFORCE", "company_name": "jpmorgan",
-  "account_id": "SF-004", "risk_signals": [],
-  "raw_text": "{\"Opportunity_Stage\": \"Negotiation\", \"ARR\": 924498.16, \"Contract_Renewal_Date\": \"2026-05-06\"}"
-}
-
-=== Event #3 (SALESFORCE) ===
-{
-  "source": "SALESFORCE", "company_name": "tesla",
-  "account_id": "SF-003", "risk_signals": ["CONTRACT_RENEWAL_AT_RISK"],
-  "raw_text": "{\"Opportunity_Stage\": \"At Risk\", \"ARR\": 1552063.51, \"Contract_Renewal_Date\": \"2026-05-15\"}"
-}
+Graph updated: patron systems [none] in 200ms     ← cold Bolt connection
+Graph updated: cb bancshares inc/hi [none] in 1ms
+Graph updated: wyndham hotels & resorts [none] in 0ms
+Graph updated: ebr systems [EARNINGS_MISS] in 1ms
+Graph updated: applied digital [EXECUTIVE_DEPARTURE] in 0ms
+Graph updated: new mountain finance [TAKEOVER_BID] in 0ms
 ```
 
-Event emission latency: ~0ms (in-process generation, no I/O). Inter-event interval: 10 seconds.
+Graph write latency (warm connection): **0–1ms** per upsert. Well under 60s target.
 
 ## Next Sprint Goal
 
-**Sprint 6 — Graph write-back + risk score (Week 2, Day 1)**
-- Implement `graph/memgraph_client.py`: connection pooling via `pymgclient`, `upsert_account()` helper
-- Cypher: `MERGE (a:Account {cik: $cik}) SET a.risk_score = $score, a.updated_at = $ts`
-- Implement `scoring/account_health.py`: weighted score from risk_signals list (4 signals)
-- Wire `sec_ingestion.py` and `synthetic_crm.py` → Memgraph write-back
-- End-to-end latency target: event emitted → Memgraph node updated < 60 seconds
-- Integration test: `tests/test_graph_write.py`
+**Sprint 7 — Account health scoring + Streamlit dashboard (Week 2, Day 2)**
+- Implement `scoring/account_health.py`: weighted 4-signal score
+  - TAKEOVER_BID: 40pts, EXECUTIVE_DEPARTURE: 30pts, EARNINGS_MISS: 20pts,
+    CRITICAL_SUPPORT: 15pts, CONTRACT_RENEWAL_AT_RISK: 10pts
+  - Score clamped to [0, 100], stored back to Memgraph as `a.risk_score`
+- Wire scorer into both pipeline `_on_change` / `run()` callbacks
+- Implement `dashboard/app.py`: Streamlit table of accounts sorted by risk_score,
+  with a "Context Freshness" counter (seconds since last graph update)
+- Add `tests/test_account_health.py` with unit tests for score calculation
