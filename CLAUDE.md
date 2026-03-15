@@ -72,7 +72,14 @@ Item 8.01 = Other Events (catch-all)
   and read by the dashboard on each refresh
 - OTel span naming: `graph.upsert` for Bolt writes; use `pipeline.event` for future
   pipeline-level spans. Set `company_name`, `source`, and `elapsed_ms` as span attributes
-- Cold-start latency (~810ms) is not representative of steady-state latency (~20–100ms)
-  — the first RSS poll emits a full batch of ~40 entries simultaneously; Pathway
-  sequences them through `_on_change`, inflating tail latency. Use single-event
-  measurements for steady-state benchmarks, not cold-start polls
+- Cold-start latency (~217ms) is the first Bolt connection; all subsequent writes are 1–2ms.
+  Do not use cold-start measurements for benchmarks — use steady-state (warm connection) only
+
+## Verified Latency Profile (Sprint 9, 2026-03-15)
+- Parse time: ~0.1ms
+- Bolt write cold: ~217ms (first connection)
+- Bolt write warm: 1-2ms (steady-state)
+- RSS poll interval: 30s (main latency driver)
+- Real-world P50: ~15s (half poll interval)
+- Headline claim: "Sub-30s context freshness, sub-2ms write latency"
+- Do NOT claim sub-60s as the headline — sub-30s is accurate and stronger
