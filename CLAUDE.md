@@ -24,6 +24,8 @@ and update account risk score in <60 seconds.
 - Pathway pipelines live in /pipelines
 - Tests use pytest, run via `.venv312/bin/pytest tests/`
 - Always use `.venv312/bin/python` (Python 3.12) — the default `.venv` is Python 3.14 which lacks pyarrow/Pathway wheels
+- Use `python3.12 -m pip` instead of `.venv312/bin/pip` — the pip shebang breaks after project renames
+- Never commit `.venv312/` to git — it contains binaries >100MB that exceed GitHub's limit (it's in .gitignore)
 - Docker stack starts with `docker compose up -d`
 - `timeout` is not available on macOS (GNU coreutils only) — use Python-native loop control instead of shell `timeout`
 
