@@ -64,3 +64,15 @@ Item 8.01 = Other Events (catch-all)
 - Risk signals: strip HTML from `entry.summary`, then keyword-match Item codes
 - `AccountEvent.timestamp` = filing date from `entry.updated`, not ingest time
   — signals must reflect when SEC filed, not when the pipeline processed the entry
+
+## Observability Conventions
+- `latency_tracker` is an in-process singleton — the dashboard runs in a separate
+  process and cannot share memory with the pipeline. Cross-process state is exchanged
+  via `$TMPDIR/akf_latency_stats.json`, written by the pipeline after every event
+  and read by the dashboard on each refresh
+- OTel span naming: `graph.upsert` for Bolt writes; use `pipeline.event` for future
+  pipeline-level spans. Set `company_name`, `source`, and `elapsed_ms` as span attributes
+- Cold-start latency (~810ms) is not representative of steady-state latency (~20–100ms)
+  — the first RSS poll emits a full batch of ~40 entries simultaneously; Pathway
+  sequences them through `_on_change`, inflating tail latency. Use single-event
+  measurements for steady-state benchmarks, not cold-start polls
