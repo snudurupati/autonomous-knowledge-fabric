@@ -1,7 +1,7 @@
 # Sprint Handoff Notes
 
 ## Sprint Completed
-Sprint 6 (Week 2, Day 1) — 2026-03-15
+Sprint 8 (Week 2, Day 2) — 2026-03-15
 
 ## What Was Built
 
@@ -42,6 +42,32 @@ Sprint 6 (Week 2, Day 1) — 2026-03-15
 - `pipelines/synthetic_crm.py`: same write-back, `write_graph=True` by default
 - `tests/test_memgraph_client.py`: 7 integration tests against live Memgraph
 
+### Sprint 7 — Cypher query layer + Agent Context API
+- 4 new read methods added to `graph/memgraph_client.py`:
+  - `get_account_context(company_name)`: returns 7-key dict with company info, risk signals,
+    recent events, and `context_age_seconds` computed from `last_updated` ISO timestamp
+  - `get_high_risk_accounts()`: returns accounts ordered by signal count DESC, max 20
+  - `get_accounts_updated_since(seconds_ago)`: Python-side ISO date filter (Memgraph lacks APOC)
+  - `search_accounts(query)`: case-insensitive substring search, limit 10
+- New `graph/context_api.py`: LLM-facing `get_agent_context(company_name) -> str`
+  - Formats an "ACCOUNT INTELLIGENCE REPORT" with freshness label (LIVE/RECENT/STALE)
+  - `freshness_label(age_seconds)` extracted as a pure testable function
+- New `tests/test_context_api.py`: 4 integration tests, all passing (0.89s)
+- Critical schema fix: sprint spec incorrectly referenced `s.signal_type` — actual
+  property is `s.name`; all Cypher queries use `s.name`
+
+### Sprint 8 — SEC feed URL + entry parsing fixes
+- Updated `ATOM_FEED_URL`: bumped `count=20` → `count=40`, added `search_text=` param
+- Fixed `_ATOM_TITLE_RE`: now captures both company name (group 1) AND CIK (group 2)
+  directly from title `"8-K - CompanyName (CIK) (Filer)"` — previously CIK was
+  unreliably parsed from the URL path `/edgar/data/<CIK>/`
+- Replaced `_atom_company_name()` + `_atom_cik()` with single `_parse_atom_title()`
+- Added `filing_date` field (from `entry.updated`) to atom/EFTS dicts, `RawEntrySchema`,
+  and `AccountEvent.timestamp` — events now carry the actual SEC filing date, not
+  ingest time
+- CLAUDE.md: documented SEC 8-K Item codes → RiskSignal mapping (Items 1.02, 2.01,
+  2.05, 2.06, 3.01)
+
 ## What Broke and How It Was Fixed
 
 | Problem | Fix |
@@ -56,34 +82,48 @@ Sprint 6 (Week 2, Day 1) — 2026-03-15
 | `time` import shadowed by `time` parameter in `_on_change` | Aliased as `import time as time_module` |
 | `.venv312` wiped by `git filter-repo` history rewrite | Recreated from `requirements.txt` |
 | `neo4j` driver not in requirements | Installed + frozen (`neo4j==6.1.0`) |
+| CIK parsed from URL path (unreliable, stripped by index page redirect) | Parse from Atom title directly via updated regex |
+| `AccountEvent.timestamp` set to ingest time | Set from `entry.updated` ISO string |
 
 ## Real Output Observed
 
 ```
-pytest tests/test_memgraph_client.py -v
-7 passed in 0.56s
+pytest tests/test_context_api.py -v
+4 passed in 0.89s
 
 pytest tests/ -v
-58 passed in 0.62s
+62 passed in 0.91s
 
-Graph updated: patron systems [none] in 200ms     ← cold Bolt connection
-Graph updated: cb bancshares inc/hi [none] in 1ms
-Graph updated: wyndham hotels & resorts [none] in 0ms
-Graph updated: ebr systems [EARNINGS_MISS] in 1ms
-Graph updated: applied digital [EXECUTIVE_DEPARTURE] in 0ms
-Graph updated: new mountain finance [TAKEOVER_BID] in 0ms
+get_agent_context("carbonite"):
+ACCOUNT INTELLIGENCE REPORT
+Company: carbonite
+Last Updated: 2026-03-15T17:21:17.840941+00:00 (1868 seconds ago)
+Risk Signals: None detected
+Recent Events (13 total):
+- Carbonite Inc filed 8-K on 2016-05-03. Items: 2.02, 7.01, 9.01. Accession: 0001340127-16-000175
+- Carbonite Inc filed 8-K on 2016-02-04. Items: 2.02, 5.02, 7.01, 8.01, 9.01. Accession: 0001340127-16-000116
+- Carbonite Inc filed 8-K on 2016-08-02. Items: 2.02, 7.01, 9.01. Accession: 0001340127-16-000212
+Context Freshness: STALE (1868s)
+
+Parsed AccountEvents from live feed (Sprint 8):
+company: multisensor ai holdings  cik: 0001863990  timestamp: 2026-03-13 17:30:01-04:00  signals: []
+company: applied digital           cik: 0001144879  timestamp: 2026-03-13 17:29:08-04:00  signals: [EXECUTIVE_DEPARTURE]
+company: tivic health systems      cik: 0001787740  timestamp: 2026-03-13 17:27:44-04:00  signals: []
 ```
 
-Graph write latency (warm connection): **0–1ms** per upsert. Well under 60s target.
+Graph write latency (warm Bolt connection): **0–1ms** per upsert.
 
 ## Next Sprint Goal
 
-**Sprint 7 — Account health scoring + Streamlit dashboard (Week 2, Day 2)**
-- Implement `scoring/account_health.py`: weighted 4-signal score
-  - TAKEOVER_BID: 40pts, EXECUTIVE_DEPARTURE: 30pts, EARNINGS_MISS: 20pts,
-    CRITICAL_SUPPORT: 15pts, CONTRACT_RENEWAL_AT_RISK: 10pts
-  - Score clamped to [0, 100], stored back to Memgraph as `a.risk_score`
-- Wire scorer into both pipeline `_on_change` / `run()` callbacks
-- Implement `dashboard/app.py`: Streamlit table of accounts sorted by risk_score,
-  with a "Context Freshness" counter (seconds since last graph update)
-- Add `tests/test_account_health.py` with unit tests for score calculation
+**Sprint 9 — Risk signal accuracy: Item-code mapping**
+- Update `_SIGNAL_PATTERNS` in `sec_ingestion.py` to use correct 8-K Item codes
+  per CLAUDE.md mapping:
+  - Item 1.02 → CONTRACT_RENEWAL_AT_RISK
+  - Item 2.01 → TAKEOVER_BID
+  - Item 2.05 → EXECUTIVE_DEPARTURE (currently matching Item 5.02 — wrong item number)
+  - Item 2.06 → EARNINGS_MISS
+  - Item 3.01 → EARNINGS_MISS (nearest proxy until DELISTING_RISK added in Month 2)
+- Add `tests/test_signal_extraction.py` with fixtures covering each Item code
+- Implement `scoring/account_health.py`: weighted signal score stored as `a.risk_score`
+  in Memgraph (TAKEOVER_BID=40, EXECUTIVE_DEPARTURE=30, EARNINGS_MISS=20,
+  CRITICAL_SUPPORT=15, CONTRACT_RENEWAL_AT_RISK=10, clamped to [0,100])

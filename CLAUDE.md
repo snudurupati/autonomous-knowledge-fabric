@@ -41,5 +41,15 @@ and update account risk score in <60 seconds.
 - Always run scripts as modules from project root:
   `python -m pipelines.script_name`
 - Never use `python pipelines/script_name.py` directly
-- All packages have __init__.py files in models/, pipelines/, 
+- All packages have __init__.py files in models/, pipelines/,
   graph/, scoring/, observability/
+
+## SEC 8-K Item Codes → Risk Signals
+Item 1.01 = Material Definitive Agreement
+Item 1.02 = Termination of Material Agreement  → CONTRACT_RENEWAL_AT_RISK
+Item 2.01 = Completion of Acquisition          → TAKEOVER_BID
+Item 2.05 = Departure of Directors/Officers    → EXECUTIVE_DEPARTURE
+Item 2.06 = Material Impairment               → EARNINGS_MISS
+Item 3.01 = Delisting Notice → EARNINGS_MISS (closest signal,
+            or add DELISTING_RISK to RiskSignal enum in Month 2)
+Item 8.01 = Other Events (catch-all)
