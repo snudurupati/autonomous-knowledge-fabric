@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from graph.memgraph_client import MemgraphClient
 from models.account_event import AccountEvent, EventSource, RiskSignal
+from observability.telemetry import latency_tracker
 
 # ---------------------------------------------------------------------------
 # Feed URLs
@@ -21,7 +22,7 @@ from models.account_event import AccountEvent, EventSource, RiskSignal
 
 ATOM_FEED_URL = (
     "https://www.sec.gov/cgi-bin/browse-edgar"
-    "?action=getcurrent&type=8-K&dateb=&owner=include&count=20&output=atom"
+    "?action=getcurrent&type=8-K&dateb=&owner=include&count=40&search_text=&output=atom"
 )
 
 EFTS_URL = (
@@ -39,11 +40,8 @@ POLL_INTERVAL_SECS = 30
 # ---------------------------------------------------------------------------
 
 # Atom title: "8-K - Reservoir Media, Inc. (0001824403) (Filer)"
-_ATOM_TITLE_RE = re.compile(
-    r"^[\w/\-]+ - (.+?)\s*\(\d+\)\s*(?:\([^)]+\))?$"
-)
-# CIK from /edgar/data/<CIK>/ in Atom entry links
-_ATOM_LINK_CIK_RE = re.compile(r"/edgar/data/(\d+)/")
+# Group 1 = company name, Group 2 = CIK number
+_ATOM_TITLE_RE = re.compile(r"^[\w/\-]+ - (.+?)\s*\((\d+)\)")
 # Strip HTML tags from summary
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
@@ -76,14 +74,12 @@ def _strip_html(text: str) -> str:
     return unescape(_HTML_TAG_RE.sub(" ", text)).strip()
 
 
-def _atom_company_name(title: str) -> str:
+def _parse_atom_title(title: str) -> tuple[str, Optional[str]]:
+    """Return (company_name, cik_number) parsed from Atom entry title."""
     m = _ATOM_TITLE_RE.match(title)
-    return m.group(1).strip() if m else title
-
-
-def _atom_cik(link: str) -> Optional[str]:
-    m = _ATOM_LINK_CIK_RE.search(link)
-    return m.group(1) if m else None
+    if m:
+        return m.group(1).strip(), m.group(2)
+    return title, None
 
 
 def _efts_company_name(display_names: list[str]) -> str:
@@ -108,6 +104,7 @@ def _fetch_atom_entries() -> list[dict]:
                 "title": e.get("title", ""),
                 "link": e.get("link", ""),
                 "summary": _strip_html(summary_raw),
+                "filing_date": e.get("updated", ""),
                 "feed_source": "atom",
             }
         )
@@ -143,6 +140,7 @@ def _fetch_efts_entries() -> list[dict]:
                         f"Items: {', '.join(src.get('items', []))}. "
                         f"Accession: {adsh}"
                     ),
+                    "filing_date": file_date,
                     "feed_source": "efts",
                 }
             )
@@ -161,12 +159,18 @@ class RawEntrySchema(pw.Schema):
     title: str
     link: str
     summary: str
+    filing_date: str
     feed_source: str
 
 
 # ---------------------------------------------------------------------------
 # Pathway input connector
 # ---------------------------------------------------------------------------
+
+# Tracks monotonic timestamp of self.next_json() per entry_id so _on_change
+# can compute fetch_ms = time from submission to handler dispatch.
+_submitted_ts: dict[str, float] = {}
+
 
 class SECFeedSubject(pw.io.python.ConnectorSubject):
     """Polls both SEC feeds every POLL_INTERVAL_SECS; deduplicates by entry_id."""
@@ -180,6 +184,7 @@ class SECFeedSubject(pw.io.python.ConnectorSubject):
                 eid = entry["entry_id"]
                 if eid and eid not in seen:
                     seen.add(eid)
+                    _submitted_ts[eid] = time_module.monotonic()
                     self.next_json(entry)
                     new_count += 1
             print(
@@ -195,20 +200,27 @@ class SECFeedSubject(pw.io.python.ConnectorSubject):
 # ---------------------------------------------------------------------------
 
 def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
+    from datetime import datetime, timezone
+
     title: str = row.get("title", "")
-    link: str = row.get("link", "")
     summary: str = row.get("summary", "")
-    feed_source: str = row.get("feed_source", "atom")
+    filing_date_str: str = row.get("filing_date", "")
 
     raw_text = summary or title
-    company_name = _atom_company_name(title) if feed_source == "atom" else title.split(" - ", 1)[-1].strip()
-    cik_number = _atom_cik(link) if feed_source == "atom" else (
-        re.search(r"CIK=(\d+)", link).group(1) if re.search(r"CIK=(\d+)", link) else None
-    )
+    company_name, cik_number = _parse_atom_title(title)
 
     if not company_name:
         warnings.warn(f"Skipping entry with empty company_name: {title!r}")
         return None
+
+    timestamp = datetime.now(timezone.utc)
+    if filing_date_str:
+        try:
+            timestamp = datetime.fromisoformat(filing_date_str)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
 
     try:
         return AccountEvent(
@@ -217,6 +229,7 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
             cik_number=cik_number,
             raw_text=raw_text,
             risk_signals=_extract_signals(raw_text),
+            timestamp=timestamp,
         )
     except ValidationError as exc:
         warnings.warn(f"Skipping malformed entry {title!r}: {exc}")
@@ -242,20 +255,46 @@ def _on_change(key: pw.Pointer, row: dict, time: int, is_addition: bool) -> None
     global _event_count
     if not is_addition:
         return
+
+    eid = row.get("entry_id", "")
+    t_submitted = _submitted_ts.pop(eid, None)
+
+    # --- parse phase ---
+    t_parse_start = time_module.monotonic()
     event = _row_to_account_event(row)
+    t_parse_end = time_module.monotonic()
+
     if event is None:
         return
     _event_count += 1
 
-    t0 = time_module.monotonic()
+    # Measurement starts HERE: parse is complete, company name is known.
+    latency_tracker.record_event_received(eid, "SEC_EDGAR", event.company_name)
+
+    # --- write phase ---
     try:
         _get_graph_client().upsert_event(event)
-        elapsed_ms = int((time_module.monotonic() - t0) * 1000)
+        t_write_end = time_module.monotonic()
+        latency_tracker.record_graph_written(eid)
+
         signals_str = ", ".join(s.value for s in event.risk_signals) or "none"
+        parse_ms = (t_parse_end - t_parse_start) * 1000
+        write_ms = (t_write_end - t_parse_end) * 1000
+        total_ms = parse_ms + write_ms
+        fetch_ms = (t_parse_start - t_submitted) * 1000 if t_submitted else None
+
         print(
-            f"Graph updated: {event.company_name} [{signals_str}] in {elapsed_ms}ms",
+            f"Graph updated: {event.company_name} [{signals_str}] in {total_ms:.1f}ms",
             flush=True,
         )
+
+        if _event_count <= 3:
+            fetch_str = f"{fetch_ms:.1f}ms" if fetch_ms is not None else "n/a"
+            print(
+                f"  [DEBUG #{_event_count}] fetch_ms={fetch_str} "
+                f"parse_ms={parse_ms:.1f} write_ms={write_ms:.1f} total_ms={total_ms:.1f}",
+                flush=True,
+            )
     except Exception as exc:
         warnings.warn(f"Graph write failed for {event.company_name}: {exc}")
 
