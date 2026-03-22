@@ -49,19 +49,27 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _EFTS_NAME_RE = re.compile(r"^(.+?)\s{2,}\(")
 _EFTS_CIK_RE = re.compile(r"CIK\s+(\d+)", re.I)
 
-# Risk-signal keyword patterns
+# Risk-signal keyword patterns — Item codes per CLAUDE.md
 _SIGNAL_PATTERNS: list[tuple[re.Pattern, RiskSignal]] = [
+    (
+        re.compile(r"Item\s+1\.02|terminat.*agreement|contract.*terminat", re.I),
+        RiskSignal.CONTRACT_RENEWAL_AT_RISK,
+    ),
     (
         re.compile(r"takeover|acquisition|merger|hostile|Item\s+2\.01", re.I),
         RiskSignal.TAKEOVER_BID,
     ),
     (
-        re.compile(r"departure|resign|terminat|Item\s+5\.02", re.I),
+        re.compile(r"departure|resign|Item\s+2\.05", re.I),
         RiskSignal.EXECUTIVE_DEPARTURE,
     ),
     (
-        re.compile(r"restatement|miss|Item\s+4\.02", re.I),
+        re.compile(r"restatement|impairment|miss|Item\s+2\.06", re.I),
         RiskSignal.EARNINGS_MISS,
+    ),
+    (
+        re.compile(r"Item\s+3\.01|delist", re.I),
+        RiskSignal.DELISTING_RISK,
     ),
 ]
 

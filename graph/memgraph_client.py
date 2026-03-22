@@ -10,6 +10,7 @@ from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 from models.account_event import AccountEvent
 from observability.telemetry import tracer
+from pipelines.resolver.tier1_deterministic import resolve as tier1_resolve
 
 _BOLT_URI = "bolt://localhost:7687"
 _AUTH = ("admin", "admin")
@@ -75,23 +76,31 @@ class MemgraphClient:
     def upsert_account(self, event: AccountEvent) -> None:
         """Merge Account node and attach RiskSignal nodes with HAS_SIGNAL edges."""
         now_iso = datetime.now(timezone.utc).isoformat()
+        resolved = tier1_resolve(event.company_name)
+        node_key = resolved["hash"]
+        normalized_name = resolved["normalized"]
 
         self._run(
             """
-            MERGE (a:Account {company_name: $company_name})
-            SET a.domain       = $domain,
-                a.cik_number   = $cik_number,
-                a.account_id   = $account_id,
-                a.last_updated = $last_updated,
-                a.source       = $source
+            MERGE (a:Account {node_key: $node_key})
+            SET a.company_name    = $normalized_name,
+                a.original_name   = $original_name,
+                a.normalized_name = $normalized_name,
+                a.domain          = $domain,
+                a.cik_number      = $cik_number,
+                a.account_id      = $account_id,
+                a.last_updated    = $last_updated,
+                a.source          = $source
             """,
             {
-                "company_name": event.company_name,
-                "domain":       event.company_domain,
-                "cik_number":   event.cik_number,
-                "account_id":   event.account_id,
-                "last_updated": now_iso,
-                "source":       event.source.value,
+                "node_key":       node_key,
+                "original_name":  event.company_name,
+                "normalized_name": normalized_name,
+                "domain":         event.company_domain,
+                "cik_number":     event.cik_number,
+                "account_id":     event.account_id,
+                "last_updated":   now_iso,
+                "source":         event.source.value,
             },
         )
 
@@ -100,14 +109,14 @@ class MemgraphClient:
                 """
                 MERGE (s:RiskSignal {name: $signal_name})
                 WITH s
-                MATCH (a:Account {company_name: $company_name})
+                MATCH (a:Account {node_key: $node_key})
                 MERGE (a)-[r:HAS_SIGNAL {signal: $signal_name}]->(s)
                 SET r.timestamp = $ts
                 """,
                 {
-                    "signal_name":  signal.value,
-                    "company_name": event.company_name,
-                    "ts":           now_iso,
+                    "signal_name": signal.value,
+                    "node_key":    node_key,
+                    "ts":          now_iso,
                 },
             )
 
@@ -125,6 +134,7 @@ class MemgraphClient:
     def _upsert_event_inner(self, event: AccountEvent) -> None:
         self.upsert_account(event)
 
+        node_key = tier1_resolve(event.company_name)["hash"]
         now_iso = datetime.now(timezone.utc).isoformat()
         self._run(
             """
@@ -133,15 +143,15 @@ class MemgraphClient:
                 e.raw_text   = $raw_text,
                 e.timestamp  = $timestamp
             WITH e
-            MATCH (a:Account {company_name: $company_name})
+            MATCH (a:Account {node_key: $node_key})
             MERGE (a)-[:FILED]->(e)
             """,
             {
-                "event_id":     event.event_id,
-                "source":       event.source.value,
-                "raw_text":     event.raw_text,
-                "timestamp":    event.timestamp.isoformat(),
-                "company_name": event.company_name,
+                "event_id":  event.event_id,
+                "source":    event.source.value,
+                "raw_text":  event.raw_text,
+                "timestamp": event.timestamp.isoformat(),
+                "node_key":  node_key,
             },
         )
 
