@@ -1,4 +1,4 @@
-# stream-graph-rag — CLAUDE.md
+# autonomous-knowledge-fabric — CLAUDE.md
 
 ## Project Mission
 Reference architecture for real-time Account Intelligence using
@@ -94,3 +94,11 @@ Item 8.01 = Other Events (catch-all)
 - Real-world P50: ~15s (half poll interval)
 - Headline claim: "Sub-30s context freshness, sub-2ms write latency"
 - Do NOT claim sub-60s as the headline — sub-30s is accurate and stronger
+
+## Memgraph Lab Login
+- URL: http://localhost:3000
+- Click "New Connection" 
+- Host: 127.0.0.1
+- Port: 7687
+- Username: admin
+- Password: admin
