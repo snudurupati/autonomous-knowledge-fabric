@@ -25,6 +25,7 @@ and update account risk score in <60 seconds.
 - Tests use pytest, run via `.venv312/bin/pytest tests/`
 - Always use `.venv312/bin/python` (Python 3.12) — the default `.venv` is Python 3.14 which lacks pyarrow/Pathway wheels
 - Use `python3.12 -m pip` instead of `.venv312/bin/pip` — the pip shebang breaks after project renames
+- Use `.venv312/bin/python -m pip freeze > requirements.txt` (NOT `python3.12 -m pip freeze`) — the latter points at system Python and wipes requirements.txt
 - Never commit `.venv312/` to git — it contains binaries >100MB that exceed GitHub's limit (it's in .gitignore)
 - Memgraph auth is `admin/admin` (set via `MEMGRAPH_USER` / `MEMGRAPH_PASSWORD` in docker-compose.yml) — default no-auth will fail
 - Docker stack starts with `docker compose up -d`
@@ -50,8 +51,7 @@ Item 1.02 = Termination of Material Agreement  → CONTRACT_RENEWAL_AT_RISK
 Item 2.01 = Completion of Acquisition          → TAKEOVER_BID
 Item 2.05 = Departure of Directors/Officers    → EXECUTIVE_DEPARTURE
 Item 2.06 = Material Impairment               → EARNINGS_MISS
-Item 3.01 = Delisting Notice → EARNINGS_MISS (closest signal,
-            or add DELISTING_RISK to RiskSignal enum in Month 2)
+Item 3.01 = Delisting Notice → DELISTING_RISK
 Item 8.01 = Other Events (catch-all)
 
 ## SEC EDGAR Atom Feed Conventions
@@ -74,6 +74,17 @@ Item 8.01 = Other Events (catch-all)
   pipeline-level spans. Set `company_name`, `source`, and `elapsed_ms` as span attributes
 - Cold-start latency (~217ms) is the first Bolt connection; all subsequent writes are 1–2ms.
   Do not use cold-start measurements for benchmarks — use steady-state (warm connection) only
+
+## Tier-1 Resolver Conventions (Sprint 11, 2026-03-22)
+- `node_key` = `SHA256(normalize(company_name)).hexdigest()[:16]` — canonical MERGE key for all Account nodes
+- `company_name` property = normalized form (lowercase, no punctuation, no legal suffixes) — kept for read-query compatibility
+- `original_name` property = raw string before normalization
+- Legal suffixes stripped (whole-word): inc, llc, corp, ltd, limited, plc, co, incorporated, holdings, group, technologies, systems, solutions
+- Resolver lives in `pipelines/resolver/tier1_deterministic.py` — import `resolve(name)` for the full result dict
+- **Schema migration rule**: when changing a Memgraph MERGE key, old nodes accumulate without the new key and create duplicates on next ingest. Always run a backfill migration before deploying a key change:
+  1. Find nodes where new key IS NULL
+  2. Compute and SET the new key
+  3. DETACH DELETE nodes that collide with an already-migrated node
 
 ## Verified Latency Profile (Sprint 9, 2026-03-15)
 - Parse time: ~0.1ms
