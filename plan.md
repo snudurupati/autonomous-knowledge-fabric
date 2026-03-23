@@ -1,8 +1,8 @@
 # Project Plan: Autonomous Knowledge Fabric
 
 ## Context
-- **Last Session:** Sprint 13 complete (2026-03-23)
-- **Current Goal:** Sprint 14 — Ghost Node Pattern
+- **Last Session:** Sprint 14 complete (2026-03-23)
+- **Current Goal:** Sprint 15 — Risk scoring layer
 - **Tech Stack:** Pathway (stream processor), Memgraph (graph DB), Pydantic, OpenTelemetry, Streamlit
 - **Branch:** week-2
 
@@ -29,7 +29,10 @@
   - [x] Target merge threshold: 0.75
 
 - [x] Sprint 13 — Tier 3 LLM-as-Judge (`pipelines/resolver/tier3_llm_judge.py`)
-- [ ] Sprint 14 — Ghost Node Pattern
+- [x] Sprint 14 — Ghost Node Pattern
+  - [x] Stateful Candidate Buffer in `pipelines/routing.py`
+  - [x] Strong Signal & Corroboration logic
+  - [x] Relaxation of `AccountEvent` identifier validation
 - [ ] Sprint 15 — Risk scoring layer (`scoring/account_health.py`)
 
 ## Risk Score Weights (Reserved for Sprint 15)

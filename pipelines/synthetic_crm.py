@@ -12,6 +12,7 @@ from faker import Faker
 from graph.memgraph_client import MemgraphClient
 from models.account_event import AccountEvent, EventSource, RiskSignal
 from observability.telemetry import latency_tracker
+from pipelines.routing import get_ghost_manager
 
 fake = Faker()
 
@@ -108,16 +109,22 @@ def run(interval_secs: int = 10, write_graph: bool = True) -> None:
             )
             t0 = time.monotonic()
             try:
-                client.upsert_event(event)
+                promoted = get_ghost_manager().process_event(event)
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
-                latency_tracker.record_graph_written(event.event_id)
+                
                 signals_str = ", ".join(s.value for s in event.risk_signals) or "none"
-                print(
-                    f"Graph updated: {event.company_name} [{signals_str}] in {elapsed_ms}ms",
-                    flush=True,
-                )
+                if promoted:
+                    print(
+                        f"Graph updated: {event.company_name} [{signals_str}] (Promoted) in {elapsed_ms}ms",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"Event buffered: {event.company_name} [{signals_str}] (Ghost Node) in {elapsed_ms}ms",
+                        flush=True,
+                    )
             except Exception as exc:
-                print(f"Graph write failed for {event.company_name}: {exc}", flush=True)
+                print(f"Ghost node processing failed for {event.company_name}: {exc}", flush=True)
 
         print(f"\n=== Event #{count} ({event.source.value}) ===")
         print(event.model_dump_json(indent=2))
