@@ -17,8 +17,8 @@ and update account risk score in <60 seconds.
 - Demo UI: Streamlit
 
 ## Current Sprint
-- [x] Sprint 13 — Tier-3 Resolver: LLM-as-Judge
-- [ ] Sprint 14 — Ghost Node Pattern
+- [x] Sprint 14 — Ghost Node Pattern (Stateful Buffering)
+- [ ] Sprint 15 — Risk scoring layer
 
 ## Conventions
 - All Pydantic models live in /models

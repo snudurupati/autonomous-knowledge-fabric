@@ -27,15 +27,17 @@ def test_acme_corp_normalizes():
     assert event.company_name == "acme"
 
 
-# --- identifier guard ---
+# --- identifier guard (relaxed for Ghost Node Pattern) ---
 
-def test_no_identifiers_raises():
-    with pytest.raises(ValidationError, match="At least one identifier"):
-        AccountEvent(
-            source=EventSource.SALESFORCE,
-            company_name="Vandelay Industries",
-            raw_text="No IDs provided.",
-        )
+def test_no_identifiers_allowed():
+    """Events without ID are now allowed so they can be buffered as Ghost Nodes."""
+    event = AccountEvent(
+        source=EventSource.SALESFORCE,
+        company_name="Vandelay Industries",
+        raw_text="No IDs provided.",
+    )
+    assert event.company_name == "vandelay industries"
+    assert event.cik_number is None
 
 
 # --- happy path ---

@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from graph.memgraph_client import MemgraphClient
 from models.account_event import AccountEvent, EventSource, RiskSignal
 from observability.telemetry import latency_tracker
+from pipelines.routing import get_ghost_manager
 
 # ---------------------------------------------------------------------------
 # Feed URLs
@@ -279,32 +280,34 @@ def _on_change(key: pw.Pointer, row: dict, time: int, is_addition: bool) -> None
     # Measurement starts HERE: parse is complete, company name is known.
     latency_tracker.record_event_received(eid, "SEC_EDGAR", event.company_name)
 
-    # --- write phase ---
+    # --- Ghost Node Logic ---
     try:
-        _get_graph_client().upsert_event(event)
-        t_write_end = time_module.monotonic()
-        latency_tracker.record_graph_written(eid)
-
+        promoted = get_ghost_manager().process_event(event)
+        
         signals_str = ", ".join(s.value for s in event.risk_signals) or "none"
-        parse_ms = (t_parse_end - t_parse_start) * 1000
-        write_ms = (t_write_end - t_parse_end) * 1000
-        total_ms = parse_ms + write_ms
+        parse_ms = (time_module.monotonic() - t_parse_start) * 1000
         fetch_ms = (t_parse_start - t_submitted) * 1000 if t_submitted else None
 
-        print(
-            f"Graph updated: {event.company_name} [{signals_str}] in {total_ms:.1f}ms",
-            flush=True,
-        )
+        if promoted:
+            print(
+                f"Graph updated: {event.company_name} [{signals_str}] (Promoted)",
+                flush=True,
+            )
+        else:
+            print(
+                f"Event buffered: {event.company_name} [{signals_str}] (Ghost Node)",
+                flush=True,
+            )
 
         if _event_count <= 3:
             fetch_str = f"{fetch_ms:.1f}ms" if fetch_ms is not None else "n/a"
             print(
                 f"  [DEBUG #{_event_count}] fetch_ms={fetch_str} "
-                f"parse_ms={parse_ms:.1f} write_ms={write_ms:.1f} total_ms={total_ms:.1f}",
+                f"parse_ms={parse_ms:.1f} promoted={promoted}",
                 flush=True,
             )
     except Exception as exc:
-        warnings.warn(f"Graph write failed for {event.company_name}: {exc}")
+        warnings.warn(f"Ghost node processing failed for {event.company_name}: {exc}")
 
     print(f"\n=== AccountEvent #{_event_count} ===")
     print(event.model_dump_json(indent=2))

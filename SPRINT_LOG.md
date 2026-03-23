@@ -42,3 +42,22 @@ Tier 3 LLM-as-Judge (`pipelines/resolver/tier3_llm_judge.py`)
 - **Unit Tests**: 4/4 passed in `tests/test_tier3.py` (including cache verification).
 - **Integration Tests**: 9/9 passed in `tests/test_memgraph_client.py` (including new `test_upsert_account_tier3_merge`).
 - **Dependencies**: Added `google-genai` and `aiosqlite` to `requirements.txt`.
+
+## Sprint 14 - 2026-03-23
+
+### Sprint completed
+Ghost Node Pattern (Stateful Buffering)
+
+### What was built
+- **GhostNodeManager Class**: Implemented in `pipelines/routing.py` to handle stateful buffering of events.
+- **Evidence Thresholds**: Added logic to promote events immediately if they have strong identifiers (CIK, Domain, AccountID) or after 2+ distinct events for the same fuzzy name (Corroboration).
+- **Pipeline Integration**: Refactored `pipelines/sec_ingestion.py` and `pipelines/synthetic_crm.py` to use the shared `GhostNodeManager`.
+- **Validation Relaxation**: Modified `AccountEvent` Pydantic model to allow name-only events, enabling them to be buffered as Ghost Nodes.
+
+### What broke and how it was fixed
+- **Pydantic Validation Conflict**: The original `AccountEvent` schema required at least one identifier, which blocked buffering of "weak" events. Relaxed this validation and updated related tests in `tests/test_account_event.py`.
+- **Normalization mismatch in tests**: `test_buffering_of_weak_signal` failed because it expected "weak corp" but `normalize()` strips "corp". Updated tests to expect normalized keys.
+
+### Real output observed
+- **Unit Tests**: 5/5 passed in `tests/test_ghost_node.py`.
+- **System Behavior**: Single weak events now trigger "Event buffered" logs instead of immediate graph writes.
