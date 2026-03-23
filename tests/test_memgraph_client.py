@@ -2,6 +2,7 @@
 # Integration tests for MemgraphClient — requires Memgraph running on localhost:7687.
 
 import pytest
+from unittest.mock import patch, MagicMock
 
 from graph.memgraph_client import MemgraphClient
 from models.account_event import AccountEvent, EventSource, RiskSignal
@@ -24,6 +25,7 @@ def clean_test_accounts(client: MemgraphClient) -> None:
     """Remove test nodes before each test to ensure isolation."""
     client._run("MATCH (a:Account) WHERE a.company_name STARTS WITH 'test_' DETACH DELETE a")
     client._run("MATCH (e:Event) WHERE e.source = 'SALESFORCE' DETACH DELETE e")
+    client._run("MATCH (alias:Alias) WHERE alias.company_name STARTS WITH 'test_' DETACH DELETE alias")
 
 
 def _make_event(
@@ -139,3 +141,92 @@ def test_get_account_with_relationships_returns_correct_structure(
 def test_get_account_returns_none_for_missing(client: MemgraphClient) -> None:
     result = client.get_account_with_relationships("test_nonexistent_xyz")
     assert result is None
+
+
+def test_upsert_account_tier2_merge_by_domain(client: MemgraphClient) -> None:
+    from pipelines.resolver.tier1_deterministic import resolve as tier1_resolve
+
+    # 1. Create original node
+    event1 = _make_event("test_original", source=EventSource.SALESFORCE)
+    event1.company_domain = "unique-domain.com"
+    client.upsert_account(event1)
+
+    # 2. Upsert different name with same domain
+    event2 = AccountEvent(
+        source=EventSource.SEC_EDGAR,
+        company_name="test_alias_name",
+        company_domain="unique-domain.com",
+        cik_number="99999",  # New info
+        raw_text="some 8-k",
+    )
+    node_key = client.upsert_account(event2)
+
+    # 3. Verify it used the same node_key as the original
+    orig_node_key = tier1_resolve("test_original")["hash"]
+    assert node_key == orig_node_key
+
+    # 4. Verify Alias node and MERGED_FROM edge
+    alias_key = tier1_resolve("test_alias_name")["hash"]
+    rows = client._run(
+        "MATCH (alias:Alias {node_key: $ak})-[:MERGED_FROM]->(target:Account) RETURN target.node_key AS tk",
+        {"ak": alias_key},
+    )
+    assert len(rows) == 1
+    assert rows[0]["tk"] == orig_node_key
+
+    # 5. Verify target node was updated with new info (CIK)
+    rows = client._run(
+        "MATCH (a:Account {node_key: $k}) RETURN a.cik_number AS cik",
+        {"k": orig_node_key},
+    )
+    assert rows[0]["cik"] == "99999"
+
+
+@patch("pipelines.resolver.tier3_llm_judge.LLMJudgeResolver.resolve")
+def test_upsert_account_tier3_merge(mock_resolve: MagicMock, client: MemgraphClient) -> None:
+    from pipelines.resolver.tier1_deterministic import resolve as tier1_resolve
+
+    # Initialize mock to return None (no Tier 3 match by default)
+    mock_resolve.return_value = None
+
+    # 1. Create original node
+    event1 = _make_event("test_target_t3", source=EventSource.SALESFORCE)
+    event1.company_domain = "target-t3.com"
+    client.upsert_account(event1)
+    target_key = tier1_resolve("test_target_t3")["hash"]
+
+    # 2. Mock Tier 3 to return this node as a match
+    mock_resolve.return_value = {
+        "node_key": target_key,
+        "company_name": "test_target_t3",
+        "confidence": 0.88,
+        "tier": 3,
+        "reasoning": "LLM says they are the same"
+    }
+
+    # 3. Upsert a name that won't match Tier 1 or Tier 2
+    # Tier 2 won't match because name is different and no domain/CIK/shared signals
+    event2 = AccountEvent(
+        source=EventSource.SEC_EDGAR,
+        company_name="test_ambiguous_alias",
+        cik_number="77777",
+        raw_text="totally different name but same company per LLM",
+    )
+    node_key = client.upsert_account(event2)
+
+    # 4. Verify it used the target_key
+    assert node_key == target_key
+
+    # 5. Verify Alias and MERGED_FROM edge with metadata
+    alias_key = tier1_resolve("test_ambiguous_alias")["hash"]
+    rows = client._run(
+        """
+        MATCH (alias:Alias {node_key: $ak})-[r:MERGED_FROM]->(target:Account) 
+        RETURN r.tier AS tier, r.confidence AS conf, r.reasoning AS reason
+        """,
+        {"ak": alias_key},
+    )
+    assert len(rows) == 1
+    assert rows[0]["tier"] == 3
+    assert rows[0]["conf"] == 0.88
+    assert rows[0]["reason"] == "LLM says they are the same"

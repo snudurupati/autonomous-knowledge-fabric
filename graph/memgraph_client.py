@@ -11,6 +11,8 @@ from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from models.account_event import AccountEvent
 from observability.telemetry import tracer
 from pipelines.resolver.tier1_deterministic import resolve as tier1_resolve
+from pipelines.resolver.tier2_graph_context import GraphContextResolver
+from pipelines.resolver.tier3_llm_judge import LLMJudgeResolver
 
 _BOLT_URI = "bolt://localhost:7687"
 _AUTH = ("admin", "admin")
@@ -73,22 +75,64 @@ class MemgraphClient:
     # Graph writes
     # ------------------------------------------------------------------
 
-    def upsert_account(self, event: AccountEvent) -> None:
-        """Merge Account node and attach RiskSignal nodes with HAS_SIGNAL edges."""
+    def upsert_account(self, event: AccountEvent) -> str:
+        """Merge Account node and attach RiskSignal nodes with HAS_SIGNAL edges. Returns the node_key used."""
         now_iso = datetime.now(timezone.utc).isoformat()
-        resolved = tier1_resolve(event.company_name)
-        node_key = resolved["hash"]
-        normalized_name = resolved["normalized"]
+        
+        # 1. Tier-1 Resolution (Deterministic Hash)
+        resolved_t1 = tier1_resolve(event.company_name)
+        node_key = resolved_t1["hash"]
+        normalized_name = resolved_t1["normalized"]
+
+        # 2. Tier-2 Resolution (Graph Context)
+        # Check if node already exists. If not, try to merge based on domain/CIK/signals.
+        existing = self._run("MATCH (a:Account {node_key: $key}) RETURN a.node_key AS key", {"key": node_key})
+        
+        if not existing:
+            resolver_t2 = GraphContextResolver(self)
+            match = resolver_t2.resolve(event)
+            
+            # 3. Tier-3 Resolution (LLM Judge) if Tier-2 fails
+            if not match:
+                resolver_t3 = LLMJudgeResolver(self)
+                match = resolver_t3.resolve(event)
+
+            if match:
+                target_key = match["node_key"]
+                # Record merge from the hash-key that WOULD have been created
+                self._run(
+                    """
+                    MERGE (alias:Alias {node_key: $alias_key})
+                    SET alias.company_name = $company_name,
+                        alias.merged_at = $now
+                    WITH alias
+                    MATCH (target:Account {node_key: $target_key})
+                    MERGE (alias)-[r:MERGED_FROM]->(target)
+                    SET r.tier = $tier,
+                        r.confidence = $confidence,
+                        r.reasoning = $reasoning
+                    """,
+                    {
+                        "alias_key": node_key,
+                        "company_name": event.company_name,
+                        "target_key": target_key,
+                        "now": now_iso,
+                        "tier": match.get("tier"),
+                        "confidence": match.get("confidence"),
+                        "reasoning": match.get("reasoning")
+                    }
+                )
+                node_key = target_key
 
         self._run(
             """
             MERGE (a:Account {node_key: $node_key})
-            SET a.company_name    = $normalized_name,
-                a.original_name   = $original_name,
+            SET a.company_name    = CASE WHEN a.company_name IS NULL THEN $normalized_name ELSE a.company_name END,
+                a.original_name   = CASE WHEN a.original_name IS NULL THEN $original_name ELSE a.original_name END,
                 a.normalized_name = $normalized_name,
-                a.domain          = $domain,
-                a.cik_number      = $cik_number,
-                a.account_id      = $account_id,
+                a.domain          = COALESCE(a.domain, $domain),
+                a.cik_number      = COALESCE(a.cik_number, $cik_number),
+                a.account_id      = COALESCE(a.account_id, $account_id),
                 a.last_updated    = $last_updated,
                 a.source          = $source
             """,
@@ -119,6 +163,8 @@ class MemgraphClient:
                     "ts":          now_iso,
                 },
             )
+        
+        return node_key
 
     def upsert_event(self, event: AccountEvent) -> None:
         """Upsert Account + RiskSignals, then create a raw Event node with FILED edge."""
@@ -132,9 +178,8 @@ class MemgraphClient:
             print(f"BOLT_WRITE company={event.company_name} elapsed_ms={elapsed_ms}", flush=True)
 
     def _upsert_event_inner(self, event: AccountEvent) -> None:
-        self.upsert_account(event)
+        node_key = self.upsert_account(event)
 
-        node_key = tier1_resolve(event.company_name)["hash"]
         now_iso = datetime.now(timezone.utc).isoformat()
         self._run(
             """
@@ -244,10 +289,43 @@ class MemgraphClient:
             """
             MATCH (a:Account)
             WHERE toLower(a.company_name) CONTAINS toLower($query)
-            RETURN a.company_name, a.last_updated, a.cik_number
+            RETURN a.company_name, a.last_updated, a.cik_number, a.node_key
             LIMIT 10
             """,
             {"query": query},
+        )
+        return [dict(r) for r in rows]
+
+    def find_potential_matches(self, domain: str | None = None, cik: str | None = None) -> list[dict]:
+        """Find accounts by domain or CIK for Tier-2 resolution, including signals."""
+        rows = self._run(
+            """
+            MATCH (a:Account)
+            WHERE (a.domain = $domain AND $domain IS NOT NULL)
+               OR (a.cik_number = $cik AND $cik IS NOT NULL)
+            OPTIONAL MATCH (a)-[:HAS_SIGNAL]->(s:RiskSignal)
+            RETURN a.node_key AS node_key, a.company_name AS company_name, 
+                   a.domain AS domain, a.cik_number AS cik_number,
+                   collect(s.name) AS signals
+            """,
+            {"domain": domain, "cik": cik},
+        )
+        return [dict(r) for r in rows]
+
+    def find_by_name(self, name: str) -> list[dict]:
+        """Find accounts with similar names, including signals."""
+        rows = self._run(
+            """
+            MATCH (a:Account)
+            WHERE toLower(a.company_name) CONTAINS toLower($name)
+               OR toLower($name) CONTAINS toLower(a.company_name)
+            OPTIONAL MATCH (a)-[:HAS_SIGNAL]->(s:RiskSignal)
+            RETURN a.node_key AS node_key, a.company_name AS company_name,
+                   a.domain AS domain, a.cik_number AS cik_number,
+                   collect(s.name) AS signals
+            LIMIT 5
+            """,
+            {"name": name},
         )
         return [dict(r) for r in rows]
 
