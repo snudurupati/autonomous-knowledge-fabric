@@ -101,6 +101,10 @@ Item 8.01 = Other Events (catch-all)
   - Tier 2 Merge: ≥ 0.75
   - Tier 3 Merge: ≥ 0.70 (LLM Judge is generally more precise, allowing lower threshold)
 
+## Bot Identity
+- **Git Name**: Gemini CLI
+- **Git Email**: gemini-cli[bot]@users.noreply.github.com
+
 ## Verified Latency Profile (Sprint 9, 2026-03-15)
 - Parse time: ~0.1ms
 - Bolt write cold: ~217ms (first connection)
