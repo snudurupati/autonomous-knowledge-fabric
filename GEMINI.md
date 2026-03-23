@@ -87,6 +87,20 @@ Item 8.01 = Other Events (catch-all)
   2. Compute and SET the new key
   3. DETACH DELETE nodes that collide with an already-migrated node
 
+## Tier-2 & Tier-3 Resolver Conventions (Sprint 13, 2026-03-23)
+- **Non-deterministic Merges**: When Tier 1 fails but Tier 2 or Tier 3 finds a match, the system must NOT create a new Account node with the hash-key. Instead, it must create an `Alias` node and a `MERGED_FROM` relationship to the target Account node.
+- **Alias Node Schema**: `node_key` (the original Tier 1 hash), `company_name` (raw), `merged_at` (ISO timestamp).
+- **Merge Metadata**: Every `MERGED_FROM` relationship must store:
+  - `tier`: 2 (Graph Context) or 3 (LLM Judge)
+  - `confidence`: 0.0-1.0 score
+  - `reasoning`: Human-readable explanation of the merge decision
+- **LLM SDK**: Always use `google-genai` (modern SDK) rather than `google-generativeai` (legacy).
+- **LLM Model**: Default is `gemini-1.5-flash` for low-latency resolution.
+- **Environment**: `GOOGLE_API_KEY` must be present for Tier 3. If missing, the pipeline silently skips LLM resolution and creates a new node (default behavior).
+- **Thresholds**:
+  - Tier 2 Merge: ≥ 0.75
+  - Tier 3 Merge: ≥ 0.70 (LLM Judge is generally more precise, allowing lower threshold)
+
 ## Verified Latency Profile (Sprint 9, 2026-03-15)
 - Parse time: ~0.1ms
 - Bolt write cold: ~217ms (first connection)
