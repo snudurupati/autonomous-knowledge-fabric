@@ -1,8 +1,8 @@
 # Project Plan: Autonomous Knowledge Fabric
 
 ## Context
-- **Last Session:** Sprint 12 complete (2026-03-23)
-- **Current Goal:** Sprint 13 — Tier 3 LLM-as-Judge
+- **Last Session:** Sprint 13 complete (2026-03-23)
+- **Current Goal:** Sprint 14 — Ghost Node Pattern
 - **Tech Stack:** Pathway (stream processor), Memgraph (graph DB), Pydantic, OpenTelemetry, Streamlit
 - **Branch:** week-2
 
@@ -28,7 +28,7 @@
   - [x] Write `MERGED_FROM` relationship on surviving nodes
   - [x] Target merge threshold: 0.75
 
-- [ ] Sprint 13 — Tier 3 LLM-as-Judge (`pipelines/resolver/tier3_llm_judge.py`)
+- [x] Sprint 13 — Tier 3 LLM-as-Judge (`pipelines/resolver/tier3_llm_judge.py`)
 - [ ] Sprint 14 — Ghost Node Pattern
 - [ ] Sprint 15 — Risk scoring layer (`scoring/account_health.py`)
 
