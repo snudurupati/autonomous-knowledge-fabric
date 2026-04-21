@@ -25,37 +25,49 @@ Traditional RAG misses this. **stream-graph-rag** flags it in under 60 seconds.
 ## 🏗️ Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Event Sources                           │
-│   SEC EDGAR RSS    Synthetic CRM    Synthetic Zendesk       │
-└──────────┬──────────────┬─────────────────┬────────────────┘
-           │              │                 │
-           ▼              ▼                 ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Pathway Stream Processor (Single Container)    │
-│   ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐  │
-│   │ Normalization│  │  3-Tier      │  │  OpenTelemetry  │  │
-│   │ & Extraction │─▶│  Resolver    │─▶│  Instrumented   │  │
-│   │ (Pydantic)   │  │  Engine      │  │  Pipeline       │  │
-│   └──────────────┘  └──────────────┘  └─────────────────┘  │
-└─────────────────────────────────┬───────────────────────────┘
-                                  │
+┌──────────────────────────────────────────────────────────────┐
+│                       EVENT SOURCES                          │
+│  [ SEC EDGAR RSS ]    [ Zendesk ]    [ Salesforce CRM ]      │
+└─────────┬──────────────────┬─────────────────┬───────────────┘
+          │                  │                 │
+          ▼                  ▼                 ▼
+┌──────────────────────────────────────────────────────────────┐
+│             PATHWAY STREAM PROCESSOR (Layer 1)               │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │                GhostNodeManager                        │  │
+│  │                                                        │  │
+│  │  Is there a Strong Signal? (CIK, Domain, AccountID)    │  │
+│  │    ├─ [YES] ── (Fast-Track) ─────────────────────────┐ │  │
+│  │    │                                                 │ │  │
+│  │    └─ [NO] ──▶ ┌───────────────────────────┐         │ │  │
+│  │                │     Candidate Buffer      │         │ │  │
+│  │                │      (Stateful Memory)    │         │ │  │
+│  │                └─────────────┬─────────────┘         │ │  │
+│  │                              │                       │ │  │
+│  │                Did 2+ events match in time window?   │ │  │
+│  │    ┌─ [NO] ─────────(Drop)───┤                       │ │  │
+│  │    │                         │                       │ │  │
+│  │    ▼                         ├─ [YES] ── (Promote) ──┘ │  │
+│  │ [ 🗑️ Data Swamp ]            │                         │  │
+│  │  (Graph Saved!)              ▼                         │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                 │                            │
+│                                 ▼                            │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │              3-Tier Resolution Engine                  │  │
+│  │  [ Tier 1: Hash ] ➔ [ Tier 2: Graph ] ➔ [ Tier 3: LLM ]│  │
+│  └────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────┬────────────────────────────┘
+                                  │ (Verified Nodes Only)
                                   ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Memgraph (Live Knowledge Graph / Hot State)    │
-│                                                             │
-│   [Global Corp]──owns──[Subsidiary A]──has──[CriticalCase]  │
-│        │                                                    │
-│        └──filing──[SEC: Hostile Takeover Bid]               │
-└─────────────────────────────────┬───────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────┐
-│         Account Intelligence Agent + Streamlit Dashboard    │
-│                                                             │
-│   Account: Global Corp    Risk Score: 🔴 CRITICAL           │
-│   Context Freshness: 14 seconds ago    ████████░░ 82/100    │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    MEMGRAPH (Hot State)                      │
+│                                                              │
+│           (Account) ◄──MERGED_FROM── (Account Alias)         │
+│               │                                              │
+│               └── HAS_SIGNAL ──▶ [ RiskSignal: CRITICAL ]    │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### The Three-Tier Entity Resolver (Core IP)
