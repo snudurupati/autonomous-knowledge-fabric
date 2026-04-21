@@ -311,7 +311,6 @@ Traditional RAG misses this. **stream-graph-rag** flags it in under 60 seconds.
 
 ```
 stream-graph-rag/
-├── CLAUDE.md                    # AI co-pilot context (update every sprint)
 ├── docker-compose.yml           # Full stack: one command
 ├── models/
 │   └── account_event.py         # Core Pydantic schemas
