@@ -50,15 +50,3 @@ class AccountEvent(BaseModel):
         v = _LEGAL_SUFFIXES.sub("", v).strip().rstrip(",").strip()
         return v
 
-    @model_validator(mode="after")
-    def check_at_least_one_identifier(self) -> "AccountEvent":
-        """
-        [DEPRECATED for Ghost Node Pattern] 
-        We now allow weak events (name-only) to be buffered in Pathway.
-        """
-        # if not any([self.company_domain, self.cik_number, self.account_id]):
-        #     raise ValueError(
-        #         "At least one identifier (company_domain, cik_number, account_id) must be provided."
-        #     )
-        return self
-

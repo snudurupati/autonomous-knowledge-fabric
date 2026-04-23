@@ -206,20 +206,29 @@ class MemgraphClient:
 
     def get_account_context(self, company_name: str) -> dict | None:
         """Return structured account context for LLM agent consumption."""
+        resolved = tier1_resolve(company_name)
+        node_key = resolved["hash"]
+
         rows = self._run(
             """
-            MATCH (a:Account {company_name: $name})
+            // Try to find the account directly or via an Alias
+            OPTIONAL MATCH (a1:Account) WHERE a1.node_key = $key OR a1.company_name = $name
+            OPTIONAL MATCH (alias:Alias {node_key: $key})-[:MERGED_FROM]->(a2:Account)
+            
+            WITH COALESCE(a1, a2) AS a
+            WHERE a IS NOT NULL
+            
             OPTIONAL MATCH (a)-[:FILED]->(e:Event)
-            OPTIONAL MATCH (a)-[:HAS_SIGNAL]->(s:RiskSignal)
+            OPTIONAL MATCH (a)-[r:HAS_SIGNAL]->(s:RiskSignal)
             RETURN
               a.company_name AS company,
               a.cik_number AS cik,
               a.last_updated AS last_updated,
               COLLECT(DISTINCT e.raw_text)[..3] AS recent_events,
-              COLLECT(DISTINCT s.name) AS risk_signals,
+              COLLECT(DISTINCT {name: s.name, timestamp: r.timestamp}) AS risk_signals,
               COUNT(DISTINCT e) AS total_events
             """,
-            {"name": company_name},
+            {"key": node_key, "name": company_name},
         )
         if not rows or rows[0]["company"] is None:
             return None
@@ -235,29 +244,55 @@ class MemgraphClient:
             except ValueError:
                 pass
 
+        # Filter out null signals if OPTIONAL MATCH didn't find any
+        raw_signals = [s for s in row["risk_signals"] if s.get("name") is not None]
+
+        from scoring.account_health import calculate_risk_score, get_risk_level
+        risk_score = calculate_risk_score(raw_signals)
+        risk_level = get_risk_level(risk_score)
+
         return {
             "company_name": row["company"],
             "cik_number": row["cik"],
             "last_updated": last_updated,
             "total_events": row["total_events"],
             "recent_events": row["recent_events"] or [],
-            "risk_signals": row["risk_signals"] or [],
+            "risk_signals": [s["name"] for s in raw_signals],
+            "risk_signal_details": raw_signals,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
             "context_age_seconds": int(context_age_seconds),
         }
 
     def get_high_risk_accounts(self) -> list[dict]:
-        """Return accounts ordered by risk signal count (descending), max 20."""
+        """Return accounts with their risk signals and calculated scores, ordered by score descending."""
         rows = self._run(
             """
-            MATCH (a:Account)-[:HAS_SIGNAL]->(s:RiskSignal)
+            MATCH (a:Account)
+            OPTIONAL MATCH (a)-[r:HAS_SIGNAL]->(s:RiskSignal)
             RETURN
               a.company_name AS company,
-              COLLECT(DISTINCT s.name) AS signals,
-              COUNT(DISTINCT s) AS signal_count
-            ORDER BY signal_count DESC LIMIT 20
+              COLLECT(DISTINCT {name: s.name, timestamp: r.timestamp}) AS risk_signals
             """
         )
-        return [dict(r) for r in rows]
+
+        from scoring.account_health import calculate_risk_score, get_risk_level
+        
+        results = []
+        for row in rows:
+            raw_signals = [s for s in row["risk_signals"] if s.get("name") is not None]
+            score = calculate_risk_score(raw_signals)
+            if score > 0:
+                results.append({
+                    "company": row["company"],
+                    "score": score,
+                    "level": get_risk_level(score),
+                    "signals": [s["name"] for s in raw_signals]
+                })
+        
+        # Sort by score descending
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:20]
 
     def get_accounts_updated_since(self, seconds_ago: int) -> list[dict]:
         """Return accounts whose last_updated is within the given window."""
@@ -289,7 +324,8 @@ class MemgraphClient:
             """
             MATCH (a:Account)
             WHERE toLower(a.company_name) CONTAINS toLower($query)
-            RETURN a.company_name, a.last_updated, a.cik_number, a.node_key
+            RETURN a.company_name AS company_name, a.last_updated AS last_updated, 
+                   a.cik_number AS cik_number, a.node_key AS node_key
             LIMIT 10
             """,
             {"query": query},
@@ -331,13 +367,20 @@ class MemgraphClient:
 
     def get_account_with_relationships(self, company_name: str) -> dict | None:
         """Return the Account node and all 1-hop relationships as a dict."""
+        resolved = tier1_resolve(company_name)
+        node_key = resolved["hash"]
+
         rows = self._run(
             """
-            MATCH (a:Account {company_name: $company_name})
+            OPTIONAL MATCH (a1:Account) WHERE a1.node_key = $key OR a1.company_name = $name
+            OPTIONAL MATCH (alias:Alias {node_key: $key})-[:MERGED_FROM]->(a2:Account)
+            WITH COALESCE(a1, a2) AS a
+            WHERE a IS NOT NULL
+
             OPTIONAL MATCH (a)-[r]->(n)
             RETURN a, collect({rel_type: type(r), target: n, props: properties(r)}) AS rels
             """,
-            {"company_name": company_name},
+            {"key": node_key, "name": company_name},
         )
         if not rows:
             return None
