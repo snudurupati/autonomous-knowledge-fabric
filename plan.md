@@ -1,8 +1,8 @@
 # Project Plan: Autonomous Knowledge Fabric
 
 ## Context
-- **Last Session:** Sprint 14 complete (2026-03-23)
-- **Current Goal:** Sprint 15 — Risk scoring layer
+- **Last Session:** Sprint 15 complete (2026-04-23)
+- **Current Goal:** Sprint 16 — Final Polish & Deployment
 - **Tech Stack:** Pathway (stream processor), Memgraph (graph DB), Pydantic, OpenTelemetry, Streamlit
 - **Branch:** week-2
 
@@ -33,7 +33,7 @@
   - [x] Stateful Candidate Buffer in `pipelines/routing.py`
   - [x] Strong Signal & Corroboration logic
   - [x] Relaxation of `AccountEvent` identifier validation
-- [ ] Sprint 15 — Risk scoring layer (`scoring/account_health.py`)
+- [x] Sprint 15 — Risk scoring layer (`scoring/account_health.py`)
 
 ## Risk Score Weights (Reserved for Sprint 15)
 | Signal | Weight |
@@ -55,3 +55,4 @@
 - **pip freeze**: use `.venv312/bin/python -m pip freeze > requirements.txt` — NOT `python3.12 -m pip freeze` (points at system Python).
 - **Memgraph auth**: `admin/admin` — default no-auth config will fail silently.
 - **Schema migration rule**: changing a Memgraph MERGE key creates duplicate nodes. Always run a backfill migration before deploying a key change.
+gration before deploying a key change.

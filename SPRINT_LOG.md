@@ -61,3 +61,24 @@ Ghost Node Pattern (Stateful Buffering)
 ### Real output observed
 - **Unit Tests**: 5/5 passed in `tests/test_ghost_node.py`.
 - **System Behavior**: Single weak events now trigger "Event buffered" logs instead of immediate graph writes.
+
+## Sprint 15 - 2026-04-23
+
+### Sprint completed
+Risk scoring layer (`scoring/account_health.py`)
+
+### What was built
+- **Weighted Scoring Logic**: Implemented `calculate_risk_score` with weights defined in the plan (Takeover: 40, Departure: 30, etc.).
+- **Recency Decay**: Added a linear decay factor that reduces signal impact over 90 days, with a 20% floor for historical context.
+- **Graph Integration**: Updated `MemgraphClient.get_account_context` and `get_high_risk_accounts` to fetch signal timestamps and return calculated scores.
+- **LLM Agent Report**: Enhanced `Context API` to include Risk Score and Level (CRITICAL, HIGH, etc.) in the intelligence reports.
+- **Streamlit Dashboard**: Implemented a real-time dashboard in `dashboard/app.py` to visualize high-risk accounts and enable account search.
+
+### What broke and how it was fixed
+- **Memgraph Port Publication**: Integration tests initially failed because Memgraph ports were not mapped to the host. Fixed by restarting the stack with `docker compose up -d --force-recreate`.
+- **Missing Dependency**: Streamlit was not in `requirements.txt`. Installed it and updated the requirements file.
+
+### Real output observed
+- **Unit Tests**: 9/9 passed in `tests/test_scoring.py`.
+- **Integration Tests**: 2/2 passed in `tests/test_scoring_integration.py`.
+- **Performance**: Steady-state write latency remains sub-2ms; scoring calculation is O(N) where N is number of unique signals (negligible overhead).
