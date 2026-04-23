@@ -18,7 +18,7 @@ and update account risk score in <60 seconds.
 
 ## Current Sprint
 - [x] Sprint 14 — Ghost Node Pattern (Stateful Buffering)
-- [ ] Sprint 15 — Risk scoring layer
+- [x] Sprint 15 — Risk scoring layer
 
 ## Conventions
 - All Pydantic models live in /models
@@ -43,6 +43,8 @@ and update account risk score in <60 seconds.
 - Always run scripts as modules from project root:
   `python -m pipelines.script_name`
 - Never use `python pipelines/script_name.py` directly
+- **Dashboard:** Run the Streamlit dashboard directly from the project root. It handles path resolution automatically:
+  `.venv312/bin/streamlit run dashboard/app.py`
 - All packages have __init__.py files in models/, pipelines/,
   graph/, scoring/, observability/
 

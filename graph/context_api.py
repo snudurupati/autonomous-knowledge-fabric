@@ -37,6 +37,7 @@ def get_agent_context(company_name: str) -> str:
     return (
         f"ACCOUNT INTELLIGENCE REPORT\n"
         f"Company: {ctx['company_name']}\n"
+        f"Risk Score: {ctx['risk_score']}/100 ({ctx['risk_level']})\n"
         f"Last Updated: {ctx['last_updated']} ({age} seconds ago)\n"
         f"Risk Signals: {signals_str}\n"
         f"Recent Events ({ctx['total_events']} total):\n{events_str}\n"
