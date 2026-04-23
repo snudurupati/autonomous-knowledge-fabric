@@ -43,7 +43,7 @@ def _make_event(
 # ---------------------------------------------------------------------------
 
 def test_get_account_context_structure(client: MemgraphClient) -> None:
-    """Upsert a test account and verify all 7 keys + types."""
+    """Upsert a test account and verify all expected keys + types."""
     event = _make_event(
         "test_ctx_acme",
         signals=[RiskSignal.EARNINGS_MISS, RiskSignal.EXECUTIVE_DEPARTURE],
@@ -55,7 +55,8 @@ def test_get_account_context_structure(client: MemgraphClient) -> None:
 
     expected_keys = {
         "company_name", "cik_number", "last_updated",
-        "total_events", "recent_events", "risk_signals", "context_age_seconds",
+        "total_events", "recent_events", "risk_signals", 
+        "risk_signal_details", "risk_score", "risk_level", "context_age_seconds",
     }
     assert expected_keys == set(ctx.keys())
 
@@ -63,6 +64,8 @@ def test_get_account_context_structure(client: MemgraphClient) -> None:
     assert isinstance(ctx["total_events"], int)
     assert isinstance(ctx["recent_events"], list)
     assert isinstance(ctx["risk_signals"], list)
+    assert isinstance(ctx["risk_score"], int)
+    assert isinstance(ctx["risk_level"], str)
     assert isinstance(ctx["context_age_seconds"], int)
     assert ctx["context_age_seconds"] >= 0
     assert "EARNINGS_MISS" in ctx["risk_signals"]
@@ -76,9 +79,11 @@ def test_get_high_risk_accounts_returns_list(client: MemgraphClient) -> None:
     for item in results:
         assert "company" in item
         assert "signals" in item
-        assert "signal_count" in item
+        assert "score" in item
+        assert "level" in item
         assert isinstance(item["signals"], list)
-        assert isinstance(item["signal_count"], int)
+        assert isinstance(item["score"], int)
+        assert isinstance(item["level"], str)
 
 
 def test_get_agent_context_carbonite() -> None:

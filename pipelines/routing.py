@@ -35,7 +35,16 @@ class GhostNodeManager:
         norm_name = normalize(event.company_name)
         now = time.monotonic()
 
-        # Clean up stale groups
+        # Global cleanup check every 100 events to prevent leak from one-off events
+        processed_count = getattr(self, "_processed_count", 0)
+        if processed_count % 100 == 0:
+            stale_names = [n for n, ts in self.first_event_ts.items() if now - ts > self.window_secs]
+            for n in stale_names:
+                del self.buffer[n]
+                del self.first_event_ts[n]
+        self._processed_count = processed_count + 1
+
+        # Per-name cleanup on access
         if norm_name in self.first_event_ts:
             if now - self.first_event_ts[norm_name] > self.window_secs:
                 del self.buffer[norm_name]

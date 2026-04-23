@@ -1,6 +1,7 @@
 # pipelines/sec_ingestion.py
 # Pathway pipeline: poll SEC EDGAR RSS + EFTS → normalize → emit AccountEvent.
 
+import os
 import re
 import time as time_module
 import warnings
@@ -180,27 +181,44 @@ class RawEntrySchema(pw.Schema):
 # can compute fetch_ms = time from submission to handler dispatch.
 _submitted_ts: dict[str, float] = {}
 
+# TTL for memory safety: 1 hour for seen entries, 10 minutes for submission timestamps.
+SEEN_TTL_SECS = 3600
+SUBMITTED_TTL_SECS = 600
 
 class SECFeedSubject(pw.io.python.ConnectorSubject):
     """Polls both SEC feeds every POLL_INTERVAL_SECS; deduplicates by entry_id."""
 
     def run(self) -> None:
-        seen: set[str] = set()
+        seen: dict[str, float] = {}  # entry_id -> timestamp
         while True:
+            now = time_module.monotonic()
+            
+            # 1. Cleanup old entries to prevent memory leaks
+            expired_seen = [eid for eid, ts in seen.items() if now - ts > SEEN_TTL_SECS]
+            for eid in expired_seen:
+                seen.pop(eid)
+            
+            expired_submitted = [eid for eid, ts in _submitted_ts.items() if now - ts > SUBMITTED_TTL_SECS]
+            for eid in expired_submitted:
+                _submitted_ts.pop(eid)
+
+            # 2. Fetch and process
             batch = _fetch_atom_entries() + _fetch_efts_entries()
             new_count = 0
             for entry in batch:
                 eid = entry["entry_id"]
                 if eid and eid not in seen:
-                    seen.add(eid)
-                    _submitted_ts[eid] = time_module.monotonic()
+                    seen[eid] = now
+                    _submitted_ts[eid] = now
                     self.next_json(entry)
                     new_count += 1
-            print(
-                f"[poll] fetched {len(batch)} entries, "
-                f"{new_count} new, {len(seen)} total seen",
-                flush=True,
-            )
+            
+            if new_count > 0:
+                print(
+                    f"[poll] fetched {len(batch)} entries, "
+                    f"{new_count} new, {len(seen)} total seen",
+                    flush=True,
+                )
             time_module.sleep(POLL_INTERVAL_SECS)
 
 
@@ -299,7 +317,8 @@ def _on_change(key: pw.Pointer, row: dict, time: int, is_addition: bool) -> None
                 flush=True,
             )
 
-        if _event_count <= 3:
+        # High-signal debug info, gated behind AKF_DEBUG=1
+        if os.environ.get("AKF_DEBUG") == "1":
             fetch_str = f"{fetch_ms:.1f}ms" if fetch_ms is not None else "n/a"
             print(
                 f"  [DEBUG #{_event_count}] fetch_ms={fetch_str} "

@@ -13,9 +13,6 @@ from pydantic import BaseModel, Field
 from models.account_event import AccountEvent
 from pipelines.resolver.tier1_deterministic import resolve as tier1_resolve
 
-# Default cache path
-CACHE_DB_PATH = os.environ.get("AKF_RESOLVER_CACHE", "akf_resolver_cache.db")
-
 class Tier3Match(BaseModel):
     node_key: Optional[str] = Field(description="The node_key of the matching candidate, or null if no match is found with > 0.7 confidence.")
     confidence: float = Field(description="Confidence score from 0.0 to 1.0.")
@@ -23,8 +20,8 @@ class Tier3Match(BaseModel):
 
 class LLMRehydrationCache:
     """Async SQLite cache for storing and retrieving LLM decisions."""
-    def __init__(self, db_path: str = CACHE_DB_PATH):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or os.environ.get("AKF_RESOLVER_CACHE", "akf_resolver_cache.db")
 
     async def init_db(self):
         """Create the table if it doesn't exist."""
