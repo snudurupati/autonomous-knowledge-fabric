@@ -1,0 +1,11 @@
+description = "Reads context files and initializes the next sprint."
+prompt = """
+Read `plan.md`, `SPRINT_LOG.md` (if it exists), and `gemini.md` to establish the current project state.
+
+Please do the following:
+1. Summarize the current project state in exactly 3 bullet points.
+2. Explicitly confirm that you understand the goal for the upcoming sprint before writing any code.
+
+Additional instructions for this sprint:
+{{args}}
+"""

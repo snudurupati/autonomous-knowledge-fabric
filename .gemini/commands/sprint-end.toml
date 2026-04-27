@@ -1,0 +1,18 @@
+description = "Updates dependencies, checks off plan.md, and logs sprint metrics."
+prompt = """
+Execute the sprint-end ritual by performing the following steps in order:
+
+1. Run the shell command: `.venv312/bin/python -m pip freeze > requirements.txt`.
+2. Update `plan.md`: Find the current sprint in the checklist, change `[ ]` or `[/]` to `[x]`, and update the "Current Goal" at the top to the next sprint.
+3. Append a new entry to `SPRINT_LOG.md` (create it if it doesn't exist) containing these exact sections for the finished sprint:
+   - Sprint completed
+   - What was built
+   - What broke and how it was fixed
+   - Real output observed (latency numbers, test results)
+4. Run the shell command: `git diff requirements.txt` and display the output.
+5. Run the shell commands: `git add requirements.txt plan.md SPRINT_LOG.md` followed by `git commit -m "Sprint [number] complete — update plan and log"`.
+6. Ask me if any new conventions should be added to `gemini.md`.
+
+Specific notes or details to include in the log for this sprint:
+{{args}}
+"""
