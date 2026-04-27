@@ -73,23 +73,25 @@ To accurately benchmark S3 commit latencies against the sub-2ms Memgraph baselin
 
 **Critical Requirement:** You must isolate the Omnigraph dependencies from the Memgraph baseline to avoid environment corruption.
 
-### 1. Core Binaries & CLI Dependencies
-macOS PEP-668 protections will block the Omnigraph bootstrap script if it attempts to install system-level packages via `pip`. Install the required CLI tools globally via Homebrew first:
+### 1. Core CLI Dependencies
+macOS PEP-668 protections will block the Omnigraph bootstrap script if it attempts to install system-level packages via `pip`. Install the AWS CLI globally via Homebrew first:
 
 ```bash
-brew tap ModernRelay/tap
-brew install ModernRelay/tap/omnigraph
 brew install awscli
 ```
 
 ### 2. Local RustFS Bootstrap
-Ensure Docker is running, then execute the one-command bootstrap. This bypasses AWS network latency by creating a local S3-compatible backend.
+Ensure Docker is installed and running, then execute the one-command bootstrap. This bypasses AWS network latency by creating a local S3-compatible backend.
 
 ```bash
-curl -fsSL [https://raw.githubusercontent.com/ModernRelay/omnigraph/main/scripts/local-rustfs-bootstrap.sh](https://raw.githubusercontent.com/ModernRelay/omnigraph/main/scripts/local-rustfs-bootstrap.sh) | bash
+curl -fsSL https://raw.githubusercontent.com/ModernRelay/omnigraph/main/scripts/local-rustfs-bootstrap.sh | bash
 ```
-* **RustFS (S3 Endpoint):** `127.0.0.1:9000`
-* **Omnigraph Server:** `127.0.0.1:8080`
+
+This bootstrap handles the entire local infrastructure setup:
+* Starts RustFS on `127.0.0.1:9000`
+* Creates a bucket and S3-backed repo
+* Loads the checked-in context fixture
+* Launches omnigraph-server on `127.0.0.1:8080`
 
 ### 3. Isolated Python Environment
 Do not run the new architecture in your legacy Memgraph environment. 
