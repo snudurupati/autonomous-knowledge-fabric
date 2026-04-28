@@ -99,23 +99,25 @@ export PYTHONPATH=$PYTHONPATH:.
 
 ---
 
-## 🛠️ Session Documentation: Building the CRM Architecture
+## 🤖 AI-Native Management & Prerequisites
 
-In this session, we built the foundational CRM architecture for Omnigraph from scratch, leveraging specialized Agent Skills.
+This property graph was architected specifically for AI agents—built by agents, for agents. To maintain the structural integrity and versioned history of the "Autonomous Knowledge Fabric," any agent operating within this workspace **must** utilize the following specialized skills:
 
-### 🧠 Agent Skills Utilized
+### 🧠 Mandatory Agent Skills
 
 1.  **`omnigraph-best-practices`**:
-    *   **Usage**: Guided the authoring of `schema.pg` and `.gq` query files. 
-    *   **Impact**: Ensured correct use of `@key` constraints for deterministic entity resolution and identified the mandatory `rows` key in HTTP API responses.
-    *   **Configuration**: Directed the migration of plaintext credentials to `.env.omni` via the `auth: env_file` directive.
+    *   **Usage**: Required for all `schema.pg` evolutions and `.gq` query authoring.
+    *   **Agent Impact**: Enforces strict "Schema-as-Code" standards, `@key` constraints for deterministic entity resolution, and ensures compatibility with the `rows`-based HTTP API response schema.
+    *   **Security**: Mandates the use of the externalized `.env.omni` vault for S3-native authentication.
 
 2.  **`omnigraph-intel-bootstrap`**:
-    *   **Usage**: Provided the operational blueprint for initializing the repository and managing local RustFS environment variables.
-    *   **Impact**: Enabled seamless, one-command initialization of the S3-native graph.
+    *   **Usage**: Required for repository initialization and environment orchestration.
+    *   **Agent Impact**: Automates the creation of the local RustFS S3 environment and provides the blueprint for cross-account repo synchronization.
 
-### 🏗️ Implementation Details
+### 🏗️ Agent-Built Implementation Details
 
-*   **Schema (`schema.pg`)**: Versioned, S3-native entity definitions.
-*   **Queries (`queries/`)**: Parameterized, type-checked GQ files.
-*   **Python Client (`engine/omnigraph/client.py`)**: High-performance REST wrapper for Omnigraph `read` and `change` operations.
+*   **Autonomous Schema (`schema.pg`)**: Versioned node definitions for `Account` and `AccountEvent` with unique key enforcement.
+*   **Versioned Queries (`queries/`)**: A library of parameterized GQ files designed for low-latency agent reasoning.
+*   **Python Client (`engine/omnigraph/client.py`)**: The primary interface for agents to perform MVCC-backed `read` and `change` operations.
+*   **Self-Validating Tests (`tests/test_omnigraph_client.py`)**: A regression suite ensuring the agent-to-graph communication remains intact during rapid iterations.
+
