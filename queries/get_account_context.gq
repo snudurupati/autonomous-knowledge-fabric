@@ -1,0 +1,47 @@
+query getAccountContext($key: String, $name: String) {
+  search node:Account {
+    where: {
+      or: [
+        { node_key: $key },
+        { name: $name }
+      ]
+    }
+    return: {
+      company: .name,
+      cik: .cik_number,
+      last_updated: .last_updated,
+      events: edge:FILED {
+        node:Event {
+          return: {
+            text: .raw_text,
+            ts: .timestamp
+          }
+        }
+      },
+      risk_signals: edge:HAS_SIGNAL {
+        node:RiskSignal {
+          return: {
+            name: .name,
+            timestamp: edge.timestamp
+          }
+        }
+      }
+    }
+  }
+}
+
+query getHighRiskAccounts() {
+  search node:Account {
+    return: {
+      company: .name,
+      risk_signals: edge:HAS_SIGNAL {
+        node:RiskSignal {
+          return: {
+            name: .name,
+            timestamp: edge.timestamp
+          }
+        }
+      }
+    }
+  }
+}

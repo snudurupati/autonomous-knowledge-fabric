@@ -1,0 +1,13 @@
+// Omnigraph CRM Schema
+
+node Account {
+    name: String
+    node_key: String @key
+    risk_score: I32
+}
+
+node AccountEvent {
+    event_id: String @key
+    source: String
+    timestamp: Date
+}

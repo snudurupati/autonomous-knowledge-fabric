@@ -1,0 +1,10 @@
+query get_account($node_key: String) {
+    match {
+        $a: Account { node_key: $node_key }
+    }
+    return {
+        $a.name,
+        $a.node_key,
+        $a.risk_score
+    }
+}

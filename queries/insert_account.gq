@@ -1,0 +1,7 @@
+query insert_account($name: String, $node_key: String, $risk_score: I32) {
+    insert Account {
+        name: $name,
+        node_key: $node_key,
+        risk_score: $risk_score
+    }
+}

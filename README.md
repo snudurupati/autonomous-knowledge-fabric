@@ -9,19 +9,6 @@ This branch (`architecture/omnigraph-pivot`) represents a fundamental architectu
 
 ---
 
-## 📖 The Problem: Context Debt
-
-Batch-based RAG creates a **"Context Debt"** — a growing gap between what your agent *believes* and what is *actually true*. 
-
-**The QBR Scenario:**
-A Sales Director walks into a Quarterly Business Review with "Global Corp." Their RAG agent says the account is *"Stable."* In reality, 20 minutes ago:
-* An SEC filing hit the wire showing a hostile takeover bid.
-* A support ticket was just escalated to "Critical" for their main subsidiary.
-
-Traditional RAG misses this. **stream-graph-rag** flags it in under 60 seconds.
-
----
-
 ## 🏗️ Architecture Pivot: S3-Native & Branching
 
 ```text
@@ -56,91 +43,79 @@ Traditional RAG misses this. **stream-graph-rag** flags it in under 60 seconds.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### The Architectural Shift
-
-| Feature | Memgraph + Pathway (Baseline) | Omnigraph (New Pivot) |
-| :--- | :--- | :--- |
-| **State Storage** | In-Memory (Volatile/Snapshot) | S3-Native (Immutable/Versioned) |
-| **Concurrency** | ACID / Lock-based | MVCC / Branch-based |
-| **Buffering** | Custom In-Memory (`GhostNodeManager`) | Native Headless Branches |
-| **Recovery** | WAL / Replay | Instant (Snapshot Pinned) |
-
 ---
 
-## ⚙️ Installation & Local Infrastructure
+## ⚙️ Quick Start: Omnigraph Infrastructure
 
-To accurately benchmark S3 commit latencies against the sub-2ms Memgraph baseline, this project utilizes a local RustFS S3 simulator. 
+This project uses a local RustFS S3 simulator to benchmark commit latencies.
 
-**Critical Requirement:** You must isolate the Omnigraph dependencies from the Memgraph baseline to avoid environment corruption.
-
-### 1. Core CLI Dependencies
-macOS PEP-668 protections will block the Omnigraph bootstrap script if it attempts to install system-level packages via `pip`. Install the AWS CLI globally via Homebrew first:
+### 1. Environment & S3 Credentials
+Do not commit credentials. Use an externalized `.env.omni` file (included in `.gitignore`).
 
 ```bash
-brew install awscli
+# Create .env.omni with local RustFS defaults
+cat <<EOF > .env.omni
+AWS_ACCESS_KEY_ID=rustfsadmin
+AWS_SECRET_ACCESS_KEY=rustfsadmin
+AWS_REGION=us-east-1
+AWS_ENDPOINT_URL=http://127.0.0.1:9000
+AWS_ENDPOINT_URL_S3=http://127.0.0.1:9000
+AWS_ALLOW_HTTP=true
+AWS_S3_FORCE_PATH_STYLE=true
+EOF
 ```
 
-### 2. Local RustFS Bootstrap
-Ensure Docker is installed and running, then execute the one-command bootstrap. This bypasses AWS network latency by creating a local S3-compatible backend.
+### 2. Local RustFS & Binaries
+Ensure Docker is running, then bootstrap the local infrastructure.
 
 ```bash
+# Installs binaries to ./.omnigraph-rustfs-demo/bin and starts RustFS (Port 9000)
 curl -fsSL https://raw.githubusercontent.com/ModernRelay/omnigraph/main/scripts/local-rustfs-bootstrap.sh | bash
 ```
 
-This bootstrap handles the entire local infrastructure setup:
-* Starts RustFS on `127.0.0.1:9000`
-* Creates a bucket and S3-backed repo
-* Loads the checked-in context fixture
-* Launches omnigraph-server on `127.0.0.1:8080`
-
-### 3. Isolated Python Environment
-Do not run the new architecture in your legacy Memgraph environment. 
+### 3. Initialize & Start Server
+Initialize the S3-native repository using the established schema and start the HTTP server.
 
 ```bash
-# Create and activate a dedicated environment
-python -m venv .venv-omnigraph
-source .venv-omnigraph/bin/activate
+# Initialize the repository
+export $(cat .env.omni | xargs)
+./.omnigraph-rustfs-demo/bin/omnigraph init --schema schema.pg s3://omnigraph-local/crm-repo
 
-# Install S3 and stream processing dependencies
-pip install pathway streamlit boto3 requests
+# Start the Omnigraph Server (Port 8080)
+./.omnigraph-rustfs-demo/bin/omnigraph-server --config ./omnigraph.yaml
 ```
 
 ---
 
-## 🗓️ Sprint 17: The Omnigraph Ingestion Sink
+## 🏁 Development & Testing
 
-**Goal:** Deprecate the in-memory `GhostNodeManager` logic.
+### 🧪 Verifying the Client
+The Python client (`engine/omnigraph/client.py`) is verified via a `unittest` suite that performs full-roundtrip entity resolution against the S3 backend.
 
-When a new, unverified entity hits the pipeline, the `OmnigraphSink` dynamically creates a headless side-branch via the Omnigraph REST API. 
-* If the 3-Tier Resolver generates an evidence score > 70, the side-branch is fast-forward merged into `main`.
-* If the threshold is missed, the branch is dropped, ensuring zero graph pollution.
+```bash
+export PYTHONPATH=$PYTHONPATH:.
+./.venv-omnigraph/bin/python tests/test_omnigraph_client.py
+```
 
 ---
 
-## 🏁 Sprint 18: Omnigraph Read Client & API Mapping
+## 🛠️ Session Documentation: Building the CRM Architecture
 
-**Goal:** Establish the read-path for immutable agent context and benchmark S3-native performance.
+In this session, we built the foundational CRM architecture for Omnigraph from scratch, leveraging specialized Agent Skills.
 
-### 🌐 Discovered HTTP API (Port 8080)
-The Omnigraph server provides a RESTful interface to its versioned Lance backend:
-* `GET /branches`: List all active branches.
-* `POST /read`: Execute read-only GQ queries (supports branch/snapshot pinning).
-* `POST /change`: Execute mutation queries.
-* `POST /branches`: Create headless side-branches for unverified fragments.
-* `POST /branches/{id}/merge`: Fast-forward merge verified data into `main`.
+### 🧠 Agent Skills Utilized
 
-### 📄 ReadRequest Schema
-To query the graph via HTTP, the following structure is mandatory:
-```json
-{
-  "query_source": "query my_read() { ... }",
-  "branch": "main",
-  "snapshot": "optional-snapshot-id",
-  "params": {}
-}
-```
+1.  **`omnigraph-best-practices`**:
+    *   **Usage**: Guided the authoring of `schema.pg` and `.gq` query files. 
+    *   **Impact**: Ensured correct use of `@key` constraints for deterministic entity resolution and identified the mandatory `rows` key in HTTP API responses.
+    *   **Configuration**: Directed the migration of plaintext credentials to `.env.omni` via the `auth: env_file` directive.
 
-### 📊 Performance Profile (P50)
-* **Branch Creation:** ~1.2ms (Zero-copy metadata operation)
-* **S3 Commit (Merge):** ~14.5ms (RustFS local IO)
-* **Pinned Read:** ~2.1ms (Metadata-only lookups)
+2.  **`omnigraph-intel-bootstrap`**:
+    *   **Usage**: Provided the operational blueprint for initializing the repository and managing local RustFS environment variables.
+    *   **Impact**: Enabled seamless, one-command initialization of the S3-native graph.
+
+### 🏗️ Implementation Details
+
+*   **Schema (`schema.pg`)**: Versioned, S3-native entity definitions.
+*   **Queries (`queries/`)**: Parameterized, type-checked GQ files.
+*   **Python Client (`engine/omnigraph/client.py`)**: High-performance REST wrapper for Omnigraph `read` and `change` operations.

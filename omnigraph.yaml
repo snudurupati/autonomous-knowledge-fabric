@@ -1,47 +1,24 @@
-project:
-  name: Omnigraph Project
+# Omnigraph Configuration
+# Using local RustFS S3 for CRM repo
 
 graphs:
-  local:
-    uri: 's3://omnigraph-local/repos/context'
-    # bearer_token_env: OMNIGRAPH_BEARER_TOKEN
+  local_s3:
+    uri: s3://omnigraph-local/crm-repo
 
 server:
-  graph: local
+  graph: local_s3
   bind: 127.0.0.1:8080
 
 cli:
-  graph: local
+  graph: local_s3
   branch: main
-  output_format: table
-  table_max_column_width: 80
-  table_cell_layout: truncate
+  output_format: jsonl
 
 query:
-  roots:
-    - queries
-    - .
+  roots: [queries, .]
 
-aliases:
-  # owner:
-  #   command: read
-  #   query: context.gq
-  #   name: decision_owner
-  #   args: [slug]
-  #   graph: local
-  #   branch: main
-  #   format: kv
-  #
-  # attach_trace:
-  #   command: change
-  #   query: mutations.gq
-  #   name: attach_trace
-  #   args: [decision_slug, trace_slug]
-  #   graph: local
-  #   branch: main
+auth:
+  env_file: .env.omni
 
-# auth:
-#   env_file: ./.env.omni
-#
-# policy:
-#   file: ./policy.yaml
+# Schema path for init/apply operations
+schema: ./schema.pg
