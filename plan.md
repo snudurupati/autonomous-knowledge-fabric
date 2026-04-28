@@ -1,10 +1,10 @@
 # Project Plan: Autonomous Knowledge Fabric
 
 ## Context
-- **Last Session:** Sprint 16 complete (2026-04-23)
-- **Current Goal:** Sprint 17 — RAG Baseline Comparison
-- **Tech Stack:** Pathway (stream processor), Memgraph (graph DB), Pydantic, OpenTelemetry, Streamlit
-- **Branch:** week-2
+- **Last Session:** Sprint 17 complete (2026-04-28)
+- **Current Goal:** Sprint 18 — Branch-based Corroboration
+- **Tech Stack:** Pathway, Omnigraph, Boto3, Pydantic, OpenTelemetry
+- **Branch:** architecture/omnigraph-pivot
 
 ## Completed Sprints
 
@@ -24,9 +24,11 @@
 - [x] Sprint 14 — Ghost Node Pattern
 - [x] Sprint 15 — Risk scoring layer (`scoring/account_health.py`)
 - [x] Sprint 16 — Final Polish & Deployment
+- [x] Sprint 17 — Omnigraph Ingestion Sink (Sprint 17)
 
 ## Upcoming Sprints
-- [ ] Sprint 17 — RAG Baseline Comparison (Pinecone + LlamaIndex)
+- [ ] Sprint 18 — Branch-based Corroboration
+- [ ] Sprint 19 — LLM Resolver Integration with Omnigraph Side-Branches
 
 ## Risk Score Weights
 | Signal | Weight |

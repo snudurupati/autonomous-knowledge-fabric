@@ -104,3 +104,26 @@ Final Polish & Deployment
 - **Test Results**: 106/106 tests passed.
 - **Latency Profile**: Steady-state write latency remains < 2ms; P50 freshness ~15s (half poll interval).
 - **Graph Robustness**: Successfully handles lookups for merged/aliased accounts using `node_key`.
+
+## Sprint 17 - 2026-04-28
+
+### Sprint completed
+Omnigraph Ingestion Sink (Sprint 17)
+
+### What was built
+- **OmnigraphSink Class**: Implemented in `engine/omnigraph/ingestion_sink.py` replacing the legacy in-memory buffering with native Omnigraph side-branches.
+- **OmnigraphRoutingManager Class**: Implemented in `pipelines/routing.py`, utilizing `OmnigraphSink` for branch-based buffering and merge evaluation.
+- **Branch-Based Buffering**: All unverified entity fragments now create a "headless" side-branch in Omnigraph.
+- **The Merge Threshold**: Implemented `evaluate_and_merge` which fast-forward merges branches with an evidence score > 70 into the main production graph.
+- **S3-Native Integration**: Configured `OmnigraphSink` with environment-based S3/Boto3 authentication for local RustFS or production S3.
+- **Pipeline Modernization**: Refactored `sec_ingestion.py` and `synthetic_crm.py` to use the new routing manager.
+
+### What broke and how it was fixed
+- **GhostNodeManager Deprecation**: Removed all references to the legacy in-memory state manager. Fixed documentation and comment artifacts.
+- **Indentation & Undefined Variables**: Fixed a fuzzy-match error in `sec_ingestion.py` that introduced an undefined `eid` variable and broken indentation during code injection.
+- **Test Modernization**: Renamed and updated `tests/test_ghost_node.py` to `tests/test_omnigraph_routing.py` to reflect the branch-based architecture.
+
+### Real output observed
+- **Unit Tests**: 4/4 passed in `tests/test_omnigraph_routing.py`.
+- **System Integrity**: 13/13 relevant tests passed (routing, account events, telemetry).
+- **Performance**: Robust logging added for branch creation and merge latencies to enable future benchmarks against Memgraph.

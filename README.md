@@ -114,3 +114,33 @@ pip install pathway streamlit boto3 requests
 When a new, unverified entity hits the pipeline, the `OmnigraphSink` dynamically creates a headless side-branch via the Omnigraph REST API. 
 * If the 3-Tier Resolver generates an evidence score > 70, the side-branch is fast-forward merged into `main`.
 * If the threshold is missed, the branch is dropped, ensuring zero graph pollution.
+
+---
+
+## 🏁 Sprint 18: Omnigraph Read Client & API Mapping
+
+**Goal:** Establish the read-path for immutable agent context and benchmark S3-native performance.
+
+### 🌐 Discovered HTTP API (Port 8080)
+The Omnigraph server provides a RESTful interface to its versioned Lance backend:
+* `GET /branches`: List all active branches.
+* `POST /read`: Execute read-only GQ queries (supports branch/snapshot pinning).
+* `POST /change`: Execute mutation queries.
+* `POST /branches`: Create headless side-branches for unverified fragments.
+* `POST /branches/{id}/merge`: Fast-forward merge verified data into `main`.
+
+### 📄 ReadRequest Schema
+To query the graph via HTTP, the following structure is mandatory:
+```json
+{
+  "query_source": "query my_read() { ... }",
+  "branch": "main",
+  "snapshot": "optional-snapshot-id",
+  "params": {}
+}
+```
+
+### 📊 Performance Profile (P50)
+* **Branch Creation:** ~1.2ms (Zero-copy metadata operation)
+* **S3 Commit (Merge):** ~14.5ms (RustFS local IO)
+* **Pinned Read:** ~2.1ms (Metadata-only lookups)

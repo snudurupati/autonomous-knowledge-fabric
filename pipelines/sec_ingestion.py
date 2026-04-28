@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from graph.memgraph_client import MemgraphClient
 from models.account_event import AccountEvent, EventSource, RiskSignal
 from observability.telemetry import latency_tracker
-from pipelines.routing import get_ghost_manager
+from pipelines.routing import get_routing_manager
 
 # ---------------------------------------------------------------------------
 # Feed URLs
@@ -296,11 +296,9 @@ def _on_change(key: pw.Pointer, row: dict, time: int, is_addition: bool) -> None
     _event_count += 1
 
     # Measurement starts HERE: parse is complete, company name is known.
-    latency_tracker.record_event_received(eid, "SEC_EDGAR", event.company_name)
-
-    # --- Ghost Node Logic ---
+    # --- Omnigraph Branching Logic (Sprint 17) ---
     try:
-        promoted = get_ghost_manager().process_event(event)
+        promoted = get_routing_manager().process_event(event)
         
         signals_str = ", ".join(s.value for s in event.risk_signals) or "none"
         parse_ms = (time_module.monotonic() - t_parse_start) * 1000
@@ -308,12 +306,12 @@ def _on_change(key: pw.Pointer, row: dict, time: int, is_addition: bool) -> None
 
         if promoted:
             print(
-                f"Graph updated: {event.company_name} [{signals_str}] (Promoted)",
+                f"Graph updated: {event.company_name} [{signals_str}] (Promoted to Main)",
                 flush=True,
             )
         else:
             print(
-                f"Event buffered: {event.company_name} [{signals_str}] (Ghost Node)",
+                f"Event branched: {event.company_name} [{signals_str}] (Headless Branch)",
                 flush=True,
             )
 
@@ -326,7 +324,7 @@ def _on_change(key: pw.Pointer, row: dict, time: int, is_addition: bool) -> None
                 flush=True,
             )
     except Exception as exc:
-        warnings.warn(f"Ghost node processing failed for {event.company_name}: {exc}")
+        warnings.warn(f"Omnigraph routing failed for {event.company_name}: {exc}")
 
     print(f"\n=== AccountEvent #{_event_count} ===")
     print(event.model_dump_json(indent=2))

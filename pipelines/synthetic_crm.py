@@ -5,14 +5,15 @@ import json
 import random
 import time
 import uuid
+import os
 from datetime import datetime, timedelta, timezone
 
 from faker import Faker
 
-from graph.memgraph_client import MemgraphClient
+# from graph.memgraph_client import MemgraphClient
 from models.account_event import AccountEvent, EventSource, RiskSignal
 from observability.telemetry import latency_tracker
-from pipelines.routing import get_ghost_manager
+from pipelines.routing import get_routing_manager
 
 fake = Faker()
 
@@ -95,7 +96,8 @@ def run(interval_secs: int = 10, write_graph: bool = True) -> None:
     zd_gen = ZendeskEventGenerator()
     generators = [sf_gen, zd_gen]
     count = 0
-    client = MemgraphClient() if write_graph else None
+    
+    routing_manager = get_routing_manager()
 
     while True:
         company = random.choice(SEED_COMPANIES)
@@ -103,28 +105,26 @@ def run(interval_secs: int = 10, write_graph: bool = True) -> None:
         event = gen.generate(company=company)
         count += 1
 
-        if client is not None:
-            latency_tracker.record_event_received(
-                event.event_id, event.source.value, event.company_name
-            )
+        if write_graph:
+            # latency_tracker.record_event_received is now called inside routing_manager -> sink
             t0 = time.monotonic()
             try:
-                promoted = get_ghost_manager().process_event(event)
+                promoted = routing_manager.process_event(event)
                 elapsed_ms = int((time.monotonic() - t0) * 1000)
                 
                 signals_str = ", ".join(s.value for s in event.risk_signals) or "none"
                 if promoted:
                     print(
-                        f"Graph updated: {event.company_name} [{signals_str}] (Promoted) in {elapsed_ms}ms",
+                        f"Graph updated: {event.company_name} [{signals_str}] (Promoted to Main) in {elapsed_ms}ms",
                         flush=True,
                     )
                 else:
                     print(
-                        f"Event buffered: {event.company_name} [{signals_str}] (Ghost Node) in {elapsed_ms}ms",
+                        f"Event branched: {event.company_name} [{signals_str}] (Headless Branch) in {elapsed_ms}ms",
                         flush=True,
                     )
             except Exception as exc:
-                print(f"Ghost node processing failed for {event.company_name}: {exc}", flush=True)
+                print(f"Omnigraph routing failed for {event.company_name}: {exc}", flush=True)
 
         print(f"\n=== Event #{count} ({event.source.value}) ===")
         print(event.model_dump_json(indent=2))
