@@ -3,15 +3,29 @@
 
 > *"Most enterprise AI agents are failing in production because they rely on stale context — we're feeding 2026-speed models with 1996-speed batch pipelines."*
 
-**stream-graph-rag** is a build-in-public project that solves the **"Missing Middle"** of the enterprise AI stack: the gap between high-velocity business events and the context your agents actually reason over.
+**autonomous-context-fabirc** is a build-in-public project solving the **"Missing Middle"** of the enterprise AI stack: the gap between high-velocity business events and the context your agents actually reason over.
 
-This architecture migrating from a "Hot State" in-memory graph (Memgraph) to an "Immutable Snapshot" S3-native graph (Omnigraph) to leverage Git-flow for data and MVCC branching for entity resolution.
+This architecture outlines the migration from a "Hot State" in-memory graph (Memgraph) to an "Immutable Snapshot" S3-native graph (Omnigraph), leveraging Git-flow for data and MVCC branching for entity resolution.
+
+---
+
+## 🧠 Key Findings & Lessons Learned
+
+During our migration sprint, we uncovered several critical insights about running an S3-native graph database in an AI-driven pipeline:
+
+1. **The Agent-Native Paradigm**: Omnigraph is fundamentally designed for AI agents. Because there are no published Python SDKs or API examples, traditional human-in-the-loop workflows stall. By flipping the workflow—arming the Gemini CLI with `omnigraph-best-practices` and `omnigraph-intel-bootstrap` skills—the agent flawlessly synthesized the schema, queries, and custom HTTP clients from scratch.
+2. **Latency & Real-Time Viability**: S3-native architecture changes the performance profile. 
+   * **Reads (~80ms)**: Highly performant and easily supports our sub-60s agent context assembly SLA.
+   * **Writes (~1.2s)**: Single-row upserts incur a file-creation penalty due to S3 commits. While perfectly usable for background processing, high-throughput systems *must* batch ingestions.
+3. **Developer Experience Gotchas**:
+   * *The AWS IMDS Trap*: Local S3 clients without explicit credentials will hang for 6 seconds searching AWS EC2 metadata. (Fixed via dummy credentials in `.env.omni`).
+   * *Repo Initialization*: The server aggressively caches old schema fixtures. Explicit URI mapping is required during boot to avoid 500 errors.
 
 ---
 
 ## 🏗️ Architecture Pivot: S3-Native & Branching
 
-```text
+~~~~text
 ┌─────────────────────────────────────────────────────────────┐
 │                     Event Sources                           │
 │   SEC EDGAR RSS    Synthetic CRM    Synthetic Zendesk       │
@@ -41,7 +55,7 @@ This architecture migrating from a "Hot State" in-memory graph (Memgraph) to an 
 ┌─────────────────────────────────────────────────────────────┐
 │         Account Intelligence Agent + Streamlit Dashboard    │
 └─────────────────────────────────────────────────────────────┘
-```
+~~~~
 
 ---
 
@@ -50,9 +64,9 @@ This architecture migrating from a "Hot State" in-memory graph (Memgraph) to an 
 This project uses a local RustFS S3 simulator to benchmark commit latencies.
 
 ### 1. Environment & S3 Credentials
-Do not commit credentials. Use an externalized `.env.omni` file (included in `.gitignore`).
+To bypass the "AWS IMDS Trap" mentioned above, we use explicit dummy credentials. Create an externalized `.env.omni` file (included in `.gitignore`).
 
-```bash
+~~~~bash
 # Create .env.omni with local RustFS defaults
 cat <<EOF > .env.omni
 AWS_ACCESS_KEY_ID=rustfsadmin
@@ -63,27 +77,27 @@ AWS_ENDPOINT_URL_S3=http://127.0.0.1:9000
 AWS_ALLOW_HTTP=true
 AWS_S3_FORCE_PATH_STYLE=true
 EOF
-```
+~~~~
 
 ### 2. Local RustFS & Binaries
 Ensure Docker is running, then bootstrap the local infrastructure.
 
-```bash
+~~~~bash
 # Installs binaries to ./.omnigraph-rustfs-demo/bin and starts RustFS (Port 9000)
 curl -fsSL https://raw.githubusercontent.com/ModernRelay/omnigraph/main/scripts/local-rustfs-bootstrap.sh | bash
-```
+~~~~
 
 ### 3. Initialize & Start Server
 Initialize the S3-native repository using the established schema and start the HTTP server.
 
-```bash
+~~~~bash
 # Initialize the repository
 export $(cat .env.omni | xargs)
 ./.omnigraph-rustfs-demo/bin/omnigraph init --schema schema.pg s3://omnigraph-local/crm-fixed
 
 # Start the Omnigraph Server (Port 8080)
 ./.omnigraph-rustfs-demo/bin/omnigraph-server --bind 127.0.0.1:8080 s3://omnigraph-local/crm-fixed
-```
+~~~~
 
 ---
 
@@ -92,10 +106,10 @@ export $(cat .env.omni | xargs)
 ### 🧪 Verifying the Client
 The Python client (`engine/omnigraph/client.py`) supports full-roundtrip entity resolution, high-risk account filtering, and **Snapshot-Pinned Reads** for immutable context.
 
-```bash
+~~~~bash
 export PYTHONPATH=$PYTHONPATH:.
 ./.venv-omnigraph/bin/python tests/test_omnigraph_client.py
-```
+~~~~
 
 ### 📊 Performance Benchmarks (Sprint 20)
 We compared the S3-native Omnigraph backend against our legacy in-memory baseline. While S3 overhead is higher, Omnigraph provides the consistency and versioning required for production-grade agent reasoning.
@@ -117,17 +131,15 @@ This property graph was architected specifically for AI agents—built by agents
 ### 🧠 Mandatory Agent Skills
 
 1.  **`omnigraph-best-practices`**:
-    *   **Usage**: Required for all `schema.pg` evolutions and `.gq` query authoring.
-    *   **Agent Impact**: Enforces strict "Schema-as-Code" standards and `@key` constraints.
+    * **Usage**: Required for all `schema.pg` evolutions and `.gq` query authoring.
+    * **Agent Impact**: Enforces strict "Schema-as-Code" standards and `@key` constraints.
 
 2.  **`omnigraph-intel-bootstrap`**:
-    *   **Usage**: Required for repository initialization and environment orchestration.
+    * **Usage**: Required for repository initialization and environment orchestration.
 
 ### 🏗️ End-to-End Implementation
 
-*   **Modernized Schema (`schema.pg`)**: Supports complex event trails via `AccountEvent` nodes and `HAS_EVENT` edges with full indexing.
-*   **Specialized Query Library (`queries/`)**: Optimized `.gq` files for `get_account_context` and `get_high_risk_accounts`.
-*   **Production Sink (`engine/omnigraph/ingestion_sink.py`)**: A Pathway-compatible sink that maps Pydantic models to graph nodes with real-time risk scoring.
-*   **Snapshot Control**: The Python client implements `get_latest_snapshot_id()` to ensure agents always reason over a consistent, immutable slice of time.
-
-This concludes the architectural pivot to an S3-native Knowledge Fabric. The system is now stabilized, verified, and ready for high-velocity account intelligence operations.
+* **Modernized Schema (`schema.pg`)**: Supports complex event trails via `AccountEvent` nodes and `HAS_EVENT` edges with full indexing.
+* **Specialized Query Library (`queries/`)**: Optimized `.gq` files for `get_account_context` and `get_high_risk_accounts`.
+* **Production Sink (`engine/omnigraph/ingestion_sink.py`)**: A Pathway-compatible sink that maps Pydantic models to graph nodes with real-time risk scoring.
+* **Snapshot Control**: The Python client implements `get_latest_snapshot_id()` to ensure agents always reason over a consistent, immutable slice of time.
