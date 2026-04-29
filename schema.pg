@@ -7,7 +7,11 @@ node Account {
 }
 
 node AccountEvent {
-    event_id: String @key
+    event_id: String @key @index
     source: String
-    timestamp: Date
+    timestamp: Date @index
+    risk_signals: [String]?
+    raw_text: String?
 }
+
+edge HAS_EVENT: Account -> AccountEvent

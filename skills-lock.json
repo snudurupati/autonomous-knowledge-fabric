@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "omnigraph-best-practices": {
+      "source": "ModernRelay/omnigraph-starters",
+      "sourceType": "github",
+      "skillPath": "skills/omnigraph-best-practices/SKILL.md",
+      "computedHash": "5534536b713ce919ef51b48bb7e1511b8b95e7b4f348a0eac05ff6aae55ed08b"
+    },
+    "omnigraph-intel-bootstrap": {
+      "source": "ModernRelay/omnigraph-starters",
+      "sourceType": "github",
+      "skillPath": "skills/omnigraph-intel-bootstrap/SKILL.md",
+      "computedHash": "33857f8fe5e8b2a50272dbb29f80e2767c1310e80cf9f752c2df46b45c56617f"
+    }
+  }
+}

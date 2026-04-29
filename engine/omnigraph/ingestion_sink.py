@@ -27,7 +27,7 @@ class OmnigraphSink:
                  use_buffering: bool = False):
         
         self.server_url = (server_url or 
-                           os.getenv("OMNIGRAPH_SERVER_URL", "http://127.0.0.1:8080"))
+                           os.getenv("OMNIGRAPH_SERVER_URL", "http://localhost:8080"))
         self.main_branch = main_branch
         self.use_buffering = use_buffering
         
@@ -77,6 +77,23 @@ class OmnigraphSink:
                 name=company_name,
                 node_key=company_name, 
                 risk_score=risk_score,
+                branch=target_branch
+            )
+
+            # 3.1 Insert the AccountEvent node
+            self.client.insert_event(
+                event_id=event.event_id,
+                source=source,
+                timestamp=event.timestamp.date().isoformat(),
+                risk_signals=[s.value for s in event.risk_signals],
+                raw_text=event.raw_text,
+                branch=target_branch
+            )
+
+            # 3.2 Link Account -> AccountEvent
+            self.client.link_account_event(
+                account_key=company_name,
+                event_id=event.event_id,
                 branch=target_branch
             )
             

@@ -1,0 +1,12 @@
+query get_high_risk_accounts($min_score: I32) {
+    match {
+        $a: Account
+        $a.risk_score >= $min_score
+    }
+    return {
+        $a.name,
+        $a.node_key,
+        $a.risk_score
+    }
+    order { $a.risk_score desc }
+}

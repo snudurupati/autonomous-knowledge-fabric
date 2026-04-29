@@ -1,0 +1,3 @@
+query link_account_event($account: String, $event: String) {
+    insert HAS_EVENT { from: $account, to: $event }
+}

@@ -1,13 +1,13 @@
 # Omnigraph Configuration
-# Using local RustFS S3 for CRM repo
+# Using fresh repo to avoid corrupted staging state
 
 graphs:
   local_s3:
-    uri: s3://omnigraph-local/crm-repo
+    uri: s3://omnigraph-local/crm-fixed
 
 server:
   graph: local_s3
-  bind: 127.0.0.1:8080
+  bind: 0.0.0.0:8080
 
 cli:
   graph: local_s3

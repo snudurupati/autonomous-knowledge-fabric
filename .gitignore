@@ -5,3 +5,8 @@ __pycache__/
 .DS_Store
 .env.omni
 .env*
+
+# Omnigraph local simulator
+.omnigraph-rustfs-demo/
+.venv-omnigraph/
+akf_resolver_cache.db

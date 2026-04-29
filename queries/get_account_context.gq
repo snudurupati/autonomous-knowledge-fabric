@@ -1,47 +1,17 @@
-query getAccountContext($key: String, $name: String) {
-  search node:Account {
-    where: {
-      or: [
-        { node_key: $key },
-        { name: $name }
-      ]
+query get_account_context($node_key: String) {
+    match {
+        $a: Account { node_key: $node_key }
+        $a has_event $e
+        $e: AccountEvent
     }
-    return: {
-      company: .name,
-      cik: .cik_number,
-      last_updated: .last_updated,
-      events: edge:FILED {
-        node:Event {
-          return: {
-            text: .raw_text,
-            ts: .timestamp
-          }
-        }
-      },
-      risk_signals: edge:HAS_SIGNAL {
-        node:RiskSignal {
-          return: {
-            name: .name,
-            timestamp: edge.timestamp
-          }
-        }
-      }
+    return {
+        $a.name,
+        $a.node_key,
+        $a.risk_score,
+        $e.event_id,
+        $e.source,
+        $e.timestamp,
+        $e.risk_signals,
+        $e.raw_text
     }
-  }
-}
-
-query getHighRiskAccounts() {
-  search node:Account {
-    return: {
-      company: .name,
-      risk_signals: edge:HAS_SIGNAL {
-        node:RiskSignal {
-          return: {
-            name: .name,
-            timestamp: edge.timestamp
-          }
-        }
-      }
-    }
-  }
 }
