@@ -227,11 +227,16 @@ docker compose up -d rustfs
 
 ### 2. Launch the Omnigraph Server (Database Layer)
 The server provides the GQL/HTTP API that the pipelines use for ingestion.
-```bash
-# Set environment variables for local S3
-export $(cat .env.omni | xargs)
 
-# Start the server
+**First-time Setup:**
+If this is a fresh installation, you must initialize the repository first.
+```bash
+export $(cat .env.omni | xargs)
+./.omnigraph-rustfs-demo/bin/omnigraph init --schema schema.pg s3://omnigraph-local/crm-fixed
+```
+
+**Start the Server:**
+```bash
 ./.omnigraph-rustfs-demo/bin/omnigraph-server --bind 127.0.0.1:8080 s3://omnigraph-local/crm-fixed
 ```
 
