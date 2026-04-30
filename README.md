@@ -187,6 +187,34 @@ This repository is architected for AI agents. Any agent operating within this wo
 
 ---
 
+## 🧠 Deep Dive: The Data Journey
+
+The Autonomous Knowledge Fabric operates as a **push-based pipeline**. Data does not simply "sit" in Pathway; it is actively pushed through a multi-stage resolution and ingestion stack.
+
+### 1. Normalization & Extraction (Tier 1)
+*   **File**: `pipelines/sec_ingestion.py` (`_row_to_account_event`)
+*   **Action**: Raw RSS/HTML entries are unescaped and parsed via Regex to extract Company Names, CIK numbers, and event types.
+*   **Result**: A validated `AccountEvent` Pydantic model.
+
+### 2. The Subscription Bridge
+*   **File**: `pipelines/sec_ingestion.py` (`pw.io.subscribe`)
+*   **Action**: Pathway's engine triggers the `_on_change` callback for every new event. This acts as the real-time bridge between the stream processor and the graph database.
+
+### 3. Entity Resolution Routing (Tier 2 & 3)
+*   **File**: `pipelines/routing.py` (`OmnigraphRoutingManager`)
+*   **Action**: 
+    *   **Tier 2 (Graph Context)**: Checks for "Strong Signals" (CIK, Domain, ID).
+    *   **Branch-Based Buffering**: If an entity is "Weak" (name only), it is isolated in a **headless side-branch** (Fragment) in Omnigraph. This prevents "Context Pollution" on the `main` branch.
+    *   **Promotion**: Once a threshold is met (via corroborated signals or **Tier 3 LLM Judge**), the branch is merged into `main`.
+
+### 4. Atomic Ingestion (The Sink)
+*   **File**: `engine/omnigraph/ingestion_sink.py` (`OmnigraphSink`)
+*   **Action**: 
+    *   **Risk Scoring**: Calculates the final health score for the account.
+    *   **Multi-Mutation**: Executes three atomic GQL mutations (`insert_account`, `insert_event`, `link_account_event`) to ensure structural integrity.
+
+---
+
 ## 🚀 How to Run: Orchestration Flow
 
 To run the full Autonomous Knowledge Fabric, you need to coordinate the storage, database, and pipeline layers in sequence.
