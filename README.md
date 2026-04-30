@@ -81,12 +81,12 @@ During our migration sprint from Memgraph to an S3-native architecture, we uncov
 
 ---
 
-## ⚙️ Quick Start: Omnigraph Infrastructure
+## 🚀 Getting Started: Setup & Orchestration
 
-This project uses a local RustFS S3 simulator to benchmark commit latencies.
+To run the full Autonomous Knowledge Fabric, follow these steps in sequence to coordinate the storage, database, and pipeline layers.
 
-### 1. Python Environment & S3 Credentials
-Ensure you are using the `.venv-omnigraph` virtual environment and create an externalized `.env.omni` file to bypass IMDS timeouts.
+### 1. Environment & Prerequisites
+Ensure you are using the `.venv-omnigraph` virtual environment and create an externalized `.env.omni` file to point to the local S3 simulator.
 
 ```bash
 # Activate the virtual environment
@@ -104,17 +104,48 @@ AWS_S3_FORCE_PATH_STYLE=true
 EOF
 ```
 
-### 2. Local RustFS & Binaries
-```bash
-# Installs binaries to ./.omnigraph-rustfs-demo/bin and starts RustFS (Port 9000)
-curl -fsSL https://raw.githubusercontent.com/ModernRelay/omnigraph/main/scripts/local-rustfs-bootstrap.sh | bash
-```
+### 2. Infrastructure Setup (One-Time)
+The fabric uses a local RustFS S3 simulator and the Omnigraph binary.
 
-### 3. Initialize & Start Server
 ```bash
+# Start RustFS via Docker
+docker compose up -d rustfs
+
+# Install Omnigraph binaries (./.omnigraph-rustfs-demo/bin)
+curl -fsSL https://raw.githubusercontent.com/ModernRelay/omnigraph/main/scripts/local-rustfs-bootstrap.sh | bash
+
+# Initialize the S3-native repository
 export $(cat .env.omni | xargs)
 ./.omnigraph-rustfs-demo/bin/omnigraph init --schema schema.pg s3://omnigraph-local/crm-fixed
+```
+
+### 3. Run the Database Server
+The server provides the GQL/HTTP API that the pipelines use for ingestion.
+
+```bash
+export $(cat .env.omni | xargs)
 ./.omnigraph-rustfs-demo/bin/omnigraph-server --bind 127.0.0.1:8080 s3://omnigraph-local/crm-fixed
+```
+
+### 4. Kick off an Ingestion Pipeline
+Choose between real SEC data or high-volume synthetic CRM events. Open a new terminal tab and ensure `PYTHONPATH` is set.
+
+*   **Option A: Real SEC EDGAR Stream** (Polls live filings):
+    ```bash
+    export PYTHONPATH=.
+    python pipelines/sec_ingestion.py
+    ```
+*   **Option B: Synthetic CRM Load Generator** (Faker-based):
+    ```bash
+    export PYTHONPATH=.
+    python pipelines/synthetic_crm.py
+    ```
+
+### 5. Monitor the Live Dashboard
+View accounts, risk scores, and event trails in a real-time UI.
+```bash
+export PYTHONPATH=.
+streamlit run dashboard/app.py
 ```
 
 ---
@@ -216,57 +247,6 @@ The Autonomous Knowledge Fabric operates as a **push-based pipeline**. Data does
 *   **Action**: 
     *   **Risk Scoring**: Calculates the final health score for the account.
     *   **Multi-Mutation**: Executes three atomic GQL mutations (`insert_account`, `insert_event`, `link_account_event`) to ensure structural integrity.
-
----
-
-## 🚀 How to Run: Orchestration Flow
-
-To run the full Autonomous Knowledge Fabric, you need to coordinate the storage, database, and pipeline layers in sequence.
-
-### 1. Start the Infrastructure (Storage Layer)
-The fabric uses a local S3 simulator to manage the physical Parquet/Lance files.
-```bash
-docker compose up -d rustfs
-```
-
-### 2. Launch the Omnigraph Server (Database Layer)
-The server provides the GQL/HTTP API that the pipelines use for ingestion.
-
-**First-time Setup:**
-If this is a fresh installation, you must initialize the repository first.
-```bash
-export $(cat .env.omni | xargs)
-./.omnigraph-rustfs-demo/bin/omnigraph init --schema schema.pg s3://omnigraph-local/crm-fixed
-```
-
-**Start the Server:**
-```bash
-./.omnigraph-rustfs-demo/bin/omnigraph-server --bind 127.0.0.1:8080 s3://omnigraph-local/crm-fixed
-```
-
-### 3. Kick off an Ingestion Pipeline (Stream Layer)
-You can choose between real SEC data or high-volume synthetic CRM events. Open a new terminal tab and ensure `PYTHONPATH` is set.
-
-#### Option A: Real SEC EDGAR Stream
-Polls live SEC filings and extracts risk signals.
-```bash
-export PYTHONPATH=.
-python pipelines/sec_ingestion.py
-```
-
-#### Option B: Synthetic CRM Load Generator
-Generates a high-velocity stream of synthetic account events using Faker.
-```bash
-export PYTHONPATH=.
-python pipelines/synthetic_crm.py
-```
-
-### 4. Monitor the Live Dashboard (Visualization Layer)
-View the accounts, risk scores, and event trails in a real-time UI.
-```bash
-export PYTHONPATH=.
-streamlit run dashboard/app.py
-```
 
 ---
 
