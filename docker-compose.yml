@@ -1,20 +1,14 @@
 version: '3.8'
 services:
-  memgraph:
-    image: memgraph/memgraph-platform:latest
+  # Local S3 Storage simulator (Optional if using AWS, but good for local dev)
+  rustfs:
+    image: modernrelay/rustfs:latest
     ports:
-      - "7687:7687"
-      - "7444:7444"
-      - "3000:3000"
-    volumes:
-      - mg_data:/var/lib/memgraph
+      - "9000:9000"
     environment:
-      - MEMGRAPH_USER=admin
-      - MEMGRAPH_PASSWORD=admin
-    deploy:
-      resources:
-        limits:
-          memory: 4G
+      - RUSTFS_ROOT=/data
+    volumes:
+      - rustfs_data:/data
 
 volumes:
-  mg_data:
+  rustfs_data:

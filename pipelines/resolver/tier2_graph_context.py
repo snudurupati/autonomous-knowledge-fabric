@@ -5,10 +5,12 @@ from typing import Optional, Dict, Any, List
 from models.account_event import AccountEvent, RiskSignal
 from pipelines.resolver.tier1_deterministic import normalize
 
+from graph.omnigraph_client import OmnigraphClientWrapper
+
 class GraphContextResolver:
-    def __init__(self, client):
+    def __init__(self, client: OmnigraphClientWrapper):
         """
-        :param client: MemgraphClient instance
+        :param client: OmnigraphClientWrapper instance
         """
         self.client = client
         self.threshold_domain = 0.85

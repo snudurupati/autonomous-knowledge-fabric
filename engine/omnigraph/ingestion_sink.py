@@ -27,7 +27,7 @@ class OmnigraphSink:
                  use_buffering: bool = False):
         
         self.server_url = (server_url or 
-                           os.getenv("OMNIGRAPH_SERVER_URL", "http://localhost:8080"))
+                           os.getenv("OMNIGRAPH_SERVER_URL", "http://127.0.0.1:8080"))
         self.main_branch = main_branch
         self.use_buffering = use_buffering
         

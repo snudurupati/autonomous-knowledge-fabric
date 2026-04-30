@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 from models.account_event import AccountEvent
 from pipelines.resolver.tier1_deterministic import resolve as tier1_resolve
 
+from graph.omnigraph_client import OmnigraphClientWrapper
+
 class Tier3Match(BaseModel):
     node_key: Optional[str] = Field(description="The node_key of the matching candidate, or null if no match is found with > 0.7 confidence.")
     confidence: float = Field(description="Confidence score from 0.0 to 1.0.")
@@ -69,9 +71,9 @@ class LLMRehydrationCache:
             await db.commit()
 
 class LLMJudgeResolver:
-    def __init__(self, client, api_key: Optional[str] = None):
+    def __init__(self, client: OmnigraphClientWrapper, api_key: Optional[str] = None):
         """
-        :param client: MemgraphClient instance (to find candidates)
+        :param client: OmnigraphClientWrapper instance (to find candidates)
         :param api_key: Optional Gemini API key
         """
         self.client = client

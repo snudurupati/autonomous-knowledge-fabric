@@ -1,15 +1,15 @@
 # graph/context_api.py
-# High-level context API for LLM agents — wraps MemgraphClient.
+# High-level context API for LLM agents — wraps OmnigraphClient.
 
-from graph.memgraph_client import MemgraphClient
+from graph.omnigraph_client import OmnigraphClientWrapper
 
-_client: MemgraphClient | None = None
+_client: OmnigraphClientWrapper | None = None
 
 
-def _get_client() -> MemgraphClient:
+def _get_client() -> OmnigraphClientWrapper:
     global _client
     if _client is None:
-        _client = MemgraphClient()
+        _client = OmnigraphClientWrapper()
     return _client
 
 

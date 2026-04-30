@@ -3,7 +3,7 @@
 
 import pytest
 
-from graph.memgraph_client import MemgraphClient
+from graph.omnigraph_client import OmnigraphClientWrapper
 from graph.context_api import get_agent_context, freshness_label
 from models.account_event import AccountEvent, EventSource, RiskSignal
 
@@ -13,15 +13,15 @@ from models.account_event import AccountEvent, EventSource, RiskSignal
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def client() -> MemgraphClient:
-    c = MemgraphClient()
+def client() -> OmnigraphClientWrapper:
+    c = OmnigraphClientWrapper()
     yield c
-    c.close()
 
 
 @pytest.fixture(autouse=True)
-def clean_test_accounts(client: MemgraphClient) -> None:
-    client._run("MATCH (a:Account) WHERE a.company_name STARTS WITH 'test_ctx_' DETACH DELETE a")
+def clean_test_accounts(client: OmnigraphClientWrapper) -> None:
+    # Omnigraph doesn't have a simple selective delete yet
+    pass
 
 
 def _make_event(
@@ -42,7 +42,7 @@ def _make_event(
 # Tests
 # ---------------------------------------------------------------------------
 
-def test_get_account_context_structure(client: MemgraphClient) -> None:
+def test_get_account_context_structure(client: OmnigraphClientWrapper) -> None:
     """Upsert a test account and verify all expected keys + types."""
     event = _make_event(
         "test_ctx_acme",
@@ -72,7 +72,7 @@ def test_get_account_context_structure(client: MemgraphClient) -> None:
     assert "EXECUTIVE_DEPARTURE" in ctx["risk_signals"]
 
 
-def test_get_high_risk_accounts_returns_list(client: MemgraphClient) -> None:
+def test_get_high_risk_accounts_returns_list(client: OmnigraphClientWrapper) -> None:
     """get_high_risk_accounts returns a list of dicts with expected keys."""
     results = client.get_high_risk_accounts()
     assert isinstance(results, list)

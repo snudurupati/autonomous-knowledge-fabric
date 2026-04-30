@@ -13,7 +13,6 @@ import pathway as pw
 import requests
 from pydantic import ValidationError
 
-from graph.memgraph_client import MemgraphClient
 from models.account_event import AccountEvent, EventSource, RiskSignal
 from observability.telemetry import latency_tracker
 from pipelines.routing import get_routing_manager
@@ -268,14 +267,6 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
 # ---------------------------------------------------------------------------
 
 _event_count = 0
-_graph_client: MemgraphClient | None = None
-
-
-def _get_graph_client() -> MemgraphClient:
-    global _graph_client
-    if _graph_client is None:
-        _graph_client = MemgraphClient()
-    return _graph_client
 
 
 def _on_change(key: pw.Pointer, row: dict, time: int, is_addition: bool) -> None:

@@ -8,7 +8,7 @@ root_path = str(Path(__file__).resolve().parent.parent)
 if root_path not in sys.path:
     sys.path.append(root_path)
 
-from graph.memgraph_client import MemgraphClient
+from graph.omnigraph_client import OmnigraphClientWrapper
 from datetime import datetime, timezone
 
 st.set_page_config(page_title="AKF Account Intelligence", layout="wide")
@@ -18,7 +18,7 @@ st.subheader("Real-time Account Risk Intelligence")
 
 @st.cache_resource
 def get_client():
-    return MemgraphClient()
+    return OmnigraphClientWrapper()
 
 client = get_client()
 
