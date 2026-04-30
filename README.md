@@ -85,10 +85,14 @@ During our migration sprint from Memgraph to an S3-native architecture, we uncov
 
 This project uses a local RustFS S3 simulator to benchmark commit latencies.
 
-### 1. Environment & S3 Credentials
-Create an externalized `.env.omni` file to bypass IMDS timeouts.
+### 1. Python Environment & S3 Credentials
+Ensure you are using the `.venv-omnigraph` virtual environment and create an externalized `.env.omni` file to bypass IMDS timeouts.
 
 ```bash
+# Activate the virtual environment
+source .venv-omnigraph/bin/activate
+
+# Create the credentials file
 cat <<EOF > .env.omni
 AWS_ACCESS_KEY_ID=rustfsadmin
 AWS_SECRET_ACCESS_KEY=rustfsadmin
