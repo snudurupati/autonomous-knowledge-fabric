@@ -92,6 +92,9 @@ Ensure you are using the `.venv-omnigraph` virtual environment and create an ext
 # Activate the virtual environment
 source .venv-omnigraph/bin/activate
 
+# Install dependencies
+pip install -r requirements.txt
+
 # Create the credentials file
 cat <<EOF > .env.omni
 AWS_ACCESS_KEY_ID=rustfsadmin
