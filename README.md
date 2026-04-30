@@ -187,6 +187,52 @@ This repository is architected for AI agents. Any agent operating within this wo
 
 ---
 
+## 🚀 How to Run: Orchestration Flow
+
+To run the full Autonomous Knowledge Fabric, you need to coordinate the storage, database, and pipeline layers in sequence.
+
+### 1. Start the Infrastructure (Storage Layer)
+The fabric uses a local S3 simulator to manage the physical Parquet/Lance files.
+```bash
+docker compose up -d rustfs
+```
+
+### 2. Launch the Omnigraph Server (Database Layer)
+The server provides the GQL/HTTP API that the pipelines use for ingestion.
+```bash
+# Set environment variables for local S3
+export $(cat .env.omni | xargs)
+
+# Start the server
+./.omnigraph-rustfs-demo/bin/omnigraph-server --bind 127.0.0.1:8080 s3://omnigraph-local/crm-fixed
+```
+
+### 3. Kick off an Ingestion Pipeline (Stream Layer)
+You can choose between real SEC data or high-volume synthetic CRM events. Open a new terminal tab and ensure `PYTHONPATH` is set.
+
+#### Option A: Real SEC EDGAR Stream
+Polls live SEC filings and extracts risk signals.
+```bash
+export PYTHONPATH=.
+python pipelines/sec_ingestion.py
+```
+
+#### Option B: Synthetic CRM Load Generator
+Generates a high-velocity stream of synthetic account events using Faker.
+```bash
+export PYTHONPATH=.
+python pipelines/synthetic_crm.py
+```
+
+### 4. Monitor the Live Dashboard (Visualization Layer)
+View the accounts, risk scores, and event trails in a real-time UI.
+```bash
+export PYTHONPATH=.
+streamlit run dashboard/app.py
+```
+
+---
+
 ## 📁 Repository Structure
 
 ```
