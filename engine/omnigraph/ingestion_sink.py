@@ -36,17 +36,19 @@ class OmnigraphSink:
         
         logger.info(f"Initialized OmnigraphSink. Server: {self.server_url}, Main Branch: {self.main_branch}, Buffering: {self.use_buffering}")
 
-    def ingest_unverified_entity(self, event: AccountEvent) -> bool:
+    def ingest_unverified_entity(self, event: AccountEvent) -> str:
         """
         Maps an AccountEvent to an Account node upsert.
         Calculates risk score and uses Omnigraph's @key for deterministic merging.
+        Returns the branch ID where the ingestion occurred.
         """
         return self.ingest_event(event)
 
-    def ingest_event(self, event: AccountEvent) -> bool:
+    def ingest_event(self, event: AccountEvent) -> str:
         """
         Maps an AccountEvent to an Account node upsert.
         Calculates risk score and uses Omnigraph's @key for deterministic merging.
+        Returns the branch ID where the ingestion occurred.
         """
         start_time = time.monotonic()
         
@@ -71,17 +73,12 @@ class OmnigraphSink:
             }).raise_for_status()
         
         try:
-            # 3. Upsert the Account node using OmnigraphClient.insert_account
-            # The @key (node_key) ensures that this updates the existing account if it exists.
-            self.client.insert_account(
+            # 3. Perform Transactional Ingestion
+            # This combines Account, Event, and Link in one single call to avoid drift.
+            self.client.ingest_event_complete(
                 name=company_name,
-                node_key=company_name, 
+                node_key=company_name,
                 risk_score=risk_score,
-                branch=target_branch
-            )
-
-            # 3.1 Insert the AccountEvent node
-            self.client.insert_event(
                 event_id=event.event_id,
                 source=source,
                 timestamp=event.timestamp.date().isoformat(),
@@ -89,28 +86,14 @@ class OmnigraphSink:
                 raw_text=event.raw_text,
                 branch=target_branch
             )
-
-            # 3.2 Link Account -> AccountEvent
-            self.client.link_account_event(
-                account_key=company_name,
-                event_id=event.event_id,
-                branch=target_branch
-            )
-            
-            # 4. Post-Ingestion Verification (Read back)
-            verification = self.client.get_account(company_name, branch=target_branch)
-            rows = verification.get("rows", [])
-            if rows:
-                state = rows[0]
-                logger.info(f"POST_INGEST_VERIFICATION key='{company_name}' risk_score={state.get('a.risk_score')} branch={target_branch}")
             
             latency_ms = (time.monotonic() - start_time) * 1000
             logger.info(f"INGEST_SUCCESS entity='{company_name}' score={risk_score} latency_ms={latency_ms:.1f}")
-            return True
+            return target_branch
             
         except Exception as e:
             logger.error(f"Failed to ingest entity '{company_name}': {e}")
-            return False
+            raise e
 
     def evaluate_and_merge(self, branch_id: str, evidence_score: int, threshold: int = 70) -> bool:
         """

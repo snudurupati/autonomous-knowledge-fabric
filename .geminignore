@@ -1,0 +1,20 @@
+# Virtual Environments
+.venv/
+.venv312/
+.venv-omnigraph/
+
+# Omnigraph / Local DB
+.omnigraph-rustfs-demo/
+akf_resolver_cache.db
+
+# Cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Large / Dump files
+*.s3dump
+s3_dumps/
+
+# System
+.DS_Store

@@ -60,6 +60,7 @@ with col2:
     search_query = st.text_input("Enter company name...")
     if search_query:
         results = client.search_accounts(search_query)
+        print(results)
         if not results:
             st.warning(f"No results for '{search_query}'")
         else:

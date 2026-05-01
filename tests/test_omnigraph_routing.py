@@ -20,7 +20,7 @@ def manager(mock_sink):
     return OmnigraphRoutingManager(sink=mock_sink)
 
 def test_promotion_by_strong_signal_cik(manager, mock_sink):
-    # Event with CIK should promote immediately via merge
+    # Event with CIK should promote immediately via FAST-PATH
     event = AccountEvent(
         source=EventSource.SEC_EDGAR,
         company_name="Strong Corp",
@@ -30,13 +30,14 @@ def test_promotion_by_strong_signal_cik(manager, mock_sink):
     promoted = manager.process_event(event)
     
     assert promoted is True
-    assert mock_sink.ingest_unverified_entity.call_count == 1
-    assert mock_sink.evaluate_and_merge.call_count == 1
-    # Strong signal should use score 100
-    mock_sink.evaluate_and_merge.assert_called_with("fragment/abc12345", evidence_score=100)
+    # Fast-Path calls ingest_event directly
+    assert mock_sink.ingest_event.call_count == 1
+    # It should NOT use the branch-merge workflow
+    assert mock_sink.ingest_unverified_entity.call_count == 0
+    assert mock_sink.evaluate_and_merge.call_count == 0
 
 def test_promotion_by_strong_signal_domain(manager, mock_sink):
-    # Event with domain should promote immediately
+    # Event with domain should promote immediately via FAST-PATH
     event = AccountEvent(
         source=EventSource.SEC_EDGAR,
         company_name="Domain Corp",
@@ -46,7 +47,8 @@ def test_promotion_by_strong_signal_domain(manager, mock_sink):
     promoted = manager.process_event(event)
     
     assert promoted is True
-    assert mock_sink.evaluate_and_merge.call_count == 1
+    assert mock_sink.ingest_event.call_count == 1
+    assert mock_sink.evaluate_and_merge.call_count == 0
 
 def test_branching_of_weak_signal(manager, mock_sink):
     # Event with ONLY name should be branched but NOT merged
@@ -62,20 +64,22 @@ def test_branching_of_weak_signal(manager, mock_sink):
     promoted = manager.process_event(event)
     
     assert promoted is False
+    # Weak signals use the legacy ingest_unverified_entity (which creates a branch)
     assert mock_sink.ingest_unverified_entity.call_count == 1
+    assert mock_sink.ingest_event.call_count == 0
     assert mock_sink.evaluate_and_merge.call_count == 0
 
-def test_failed_branch_creation(manager, mock_sink):
-    # If branch creation fails, routing should return False
-    mock_sink.ingest_unverified_entity.return_value = None
+def test_failed_fast_path_ingestion(manager, mock_sink):
+    # If ingest_event fails during Fast-Path, routing should return False
+    mock_sink.ingest_event.side_effect = Exception("Omnigraph Error")
     
     event = AccountEvent(
         source=EventSource.SEC_EDGAR,
         company_name="Fail Corp",
-        cik_number="123", # Strong signal but branch creation fails
+        cik_number="123", # Strong signal
         raw_text="test"
     )
     promoted = manager.process_event(event)
     
     assert promoted is False
-    assert mock_sink.evaluate_and_merge.call_count == 0
+    assert mock_sink.ingest_event.call_count == 1

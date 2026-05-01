@@ -17,6 +17,7 @@ class OmnigraphClient:
         """
         Executes a query from a file against the Omnigraph server.
         Supports snapshot-pinned reads via the snapshot_id parameter in the payload.
+        Includes automatic retry for 409 Conflict (version drift) and forces branch sync.
         """
         query_source = self._read_query(query_filename)
         
@@ -31,10 +32,30 @@ class OmnigraphClient:
         elif branch:
             payload["branch"] = branch
         
-        response = requests.post(f"{self.base_url}/{endpoint}", json=payload)
-        if response.status_code != 200:
-            raise requests.exceptions.HTTPError(f"{response.status_code} Client Error: {response.reason} for url: {response.url}\nBody: {response.text}", response=response)
-        return response.json()
+        max_retries = 3
+        retry_delay = 0.5
+        
+        # We add ?sync_branch=true to force the server to advance its pinned head
+        # for this branch. This is the fix for the "version drift" error.
+        url = f"{self.base_url}/{endpoint}?sync_branch=true"
+        
+        for attempt in range(max_retries + 1):
+            response = requests.post(url, json=payload)
+            
+            if response.status_code == 200:
+                return response.json()
+            
+            # 409 Conflict indicates version drift. We retry after a short delay.
+            if response.status_code == 409 and attempt < max_retries:
+                import time
+                time.sleep(retry_delay * (attempt + 1))
+                continue
+                
+            # If we reach here, it's either not a 409 or we've exhausted retries
+            raise requests.exceptions.HTTPError(
+                f"{response.status_code} Client Error: {response.reason} for url: {response.url}\nBody: {response.text}", 
+                response=response
+            )
 
     def insert_account(self, name, node_key, risk_score, branch="main"):
         """
@@ -69,6 +90,22 @@ class OmnigraphClient:
             "event": event_id
         }
         return self._execute("change", "link_account_event.gq", params, branch=branch)
+
+    def ingest_event_complete(self, name, node_key, risk_score, event_id, source, timestamp, risk_signals=None, raw_text=None, branch="main"):
+        """
+        Ingests an account, an event, and the link between them in a single transactional request.
+        """
+        params = {
+            "name": name,
+            "node_key": node_key,
+            "risk_score": risk_score,
+            "event_id": event_id,
+            "source": source,
+            "timestamp": timestamp,
+            "risk_signals": risk_signals or [],
+            "raw_text": raw_text or ""
+        }
+        return self._execute("change", "ingest_event_complete.gq", params, branch=branch)
 
     def get_account(self, node_key, branch="main", snapshot_id=None):
         """

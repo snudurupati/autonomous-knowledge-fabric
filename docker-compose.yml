@@ -1,10 +1,10 @@
-version: '3.8'
 services:
   # Local S3 Storage simulator (Optional if using AWS, but good for local dev)
   rustfs:
-    image: modernrelay/rustfs:latest
+    image: rustfs/rustfs:latest
     ports:
       - "9000:9000"
+      - "9001:9001"
     environment:
       - RUSTFS_ROOT=/data
     volumes:

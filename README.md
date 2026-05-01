@@ -245,6 +245,12 @@ The Autonomous Knowledge Fabric operates as a **push-based pipeline**. Data does
     *   **Branch-Based Buffering**: If an entity is "Weak" (name only), it is isolated in a **headless side-branch** (Fragment) in Omnigraph. This prevents "Context Pollution" on the `main` branch.
     *   **Promotion**: Once a threshold is met (via corroborated signals or **Tier 3 LLM Judge**), the branch is merged into `main`.
 
+### 3.1 The "Fast-Path" Implementation (Sprint 18 Fix)
+To maintain 24/7 ingestion reliability, we implemented a **Fast-Path** logic for high-confidence data:
+*   **Problem**: High-concurrency writes to side-branches occasionally triggered `409 Conflict` (Version Drift) errors during the `branch -> merge` workflow, especially when multiple events hit the same entity simultaneously.
+*   **Solution**: Events with **Strong Signals** (CIK, Domain, or explicit Account ID) bypass the branching/buffering layer entirely and are ingested directly into the `main` branch. 
+*   **Reliability**: The `OmnigraphClient` now includes automatic retries with `?sync_branch=true`, forcing the server to synchronize the branch state before retrying a failed mutation.
+
 ### 4. Atomic Ingestion (The Sink)
 *   **File**: `engine/omnigraph/ingestion_sink.py` (`OmnigraphSink`)
 *   **Action**: 
