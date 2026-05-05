@@ -35,9 +35,11 @@ class OmnigraphClient:
         max_retries = 3
         retry_delay = 0.5
         
-        # We add ?sync_branch=true to force the server to advance its pinned head
-        # for this branch. This is the fix for the "version drift" error.
-        url = f"{self.base_url}/{endpoint}?sync_branch=true"
+        # Only force branch synchronization for writes or branch-based reads.
+        # Pinned snapshot reads should skip this to achieve sub-100ms latency.
+        url = f"{self.base_url}/{endpoint}"
+        if endpoint == "change" or not snapshot_id:
+            url += "?sync_branch=true"
         
         for attempt in range(max_retries + 1):
             response = requests.post(url, json=payload)
