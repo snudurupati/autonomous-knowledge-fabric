@@ -148,22 +148,27 @@ Omnigraph CRM Architecture & Client
 - **Client Verification**: Successful account insertion and retrieval confirmed with sub-second latency on the local S3 backend.
 - **Query Linting**: 100% pass rate for `omnigraph query lint` against the CRM schema.
 
-## Sprint 19 - 2026-04-28
+## Sprint 20 - 2026-05-05
 
 ### Sprint completed
-Finalized AI-Native Ingestion Sink
+Write Path Optimization & Omnigraph 0.4.1 Upgrade
 
 ### What was built
-- **AI-Native Mapping**: Updated `OmnigraphSink` to map `AccountEvent` Pydantic models directly to Omnigraph nodes using the specialized `OmnigraphClient`.
-- **Dynamic Risk Scoring**: Integrated `calculate_risk_score` from `scoring/account_health.py` into the ingestion path for real-time intelligence quantification.
-- **Deterministic Upsert Path**: Leveraged Omnigraph's `@key` (node_key) to ensure events for the same account update existing nodes, maintaining a singleton view of entity state.
-- **Post-Ingestion Verification**: Added a mandatory read-back step in `OmnigraphSink` to log the empirical state of the graph after every mutation.
-- **AI-Native README**: Reframed the project documentation as an agent-managed property graph with mandatory Agent Skills for autonomous operation.
+- **Omnigraph 0.4.1 Upgrade**: Migrated the core storage engine from v0.3.1 to v0.4.1, leveraging new commit pipelining and metadata optimizations.
+- **Transactional GQL Ingestion**: Implemented `ingest_event_complete.gq` to execute Account, Event, and Link mutations in a single atomic S3 commit, reducing write overhead.
+- **RCA Performance Suite**: Developed `tests/benchmark_latency.py` with support for both individual GQL mutations and high-throughput batched JSONL loads.
+- **IMDS Workaround**: Implemented `AWS_EC2_METADATA_DISABLED=true` across all environments to eliminate AWS SDK credential discovery timeouts.
+- **Latency Monitoring**: Integrated real-time latency logging in `OmnigraphSink` to track single-row vs. batch performance profiles.
 
 ### What broke and how it was fixed
-- **Merge Route Collision**: Identified a `404 Not Found` for the `POST /branches/{id}/merge` endpoint. Discovered and implemented the correct `POST /branches/merge` JSON-payload route after inspecting server logs and binary strings.
-- **Concurrent Modification Error**: Resolved a `500 Internal Server Error` during branch merging by stabilizing the ingestion path to support direct `main` branch upserts for verified events.
+- **70s Latency Cliff**: Identified that version 0.3.1 incurred a ~30s penalty per S3 commit due to metadata congestion in local simulators. Upgraded to **0.4.1** which reduced this to ~3.3s via better commit pipelining.
+- **IMDS Discovery Hangs**: Observed multi-second hangs during client initialization. Fixed by disabling EC2 metadata discovery in `.env.omni`.
+- **S3 Socket Leak**: Identified thousands of open connections during stress tests. Mitigated by switching to transactional GQL (fewer commits) and documenting the necessity of batching.
 
 ### Real output observed
-- **Ingestion Simulation**: Confirmed successful risk score updates (e.g., from 15 to 55) for the same account key during high-risk events.
-- **Documentation**: `README.md` updated to reflect the agent-centric prerequisite section and mandatory skills.
+- **Latency Benchmarks (v0.4.1)**:
+    - **Individual GQL**: ~3.3s (reduced from 70s in v0.3.1).
+    - **Batched Ingestion**: **~53ms per event** (60x faster than individual mutations).
+    - **Context Read**: ~80ms-900ms (depending on write load).
+- **Branch Management**: Successfully merged `omnigraph-upgrade-0.4.1` and froze `version-0.3.1` for historical baseline comparison.
+- **Documentation**: Updated `README.md` with the "S3 Commit Penalty" RCA and batching recommendations.
