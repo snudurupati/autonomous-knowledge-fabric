@@ -1,24 +1,14 @@
-query find_isolated_experts($vq: Vector(3072), $tq: String, $target_company: String) {
+query complex_search($query: String) {
     match {
-        # 1. Graph Traversal: Find a specific company and the people who work there
-        $c: Company { name: $target_company }
-        $p: Person
-        $p worksAt $c
-        
-        # 2. Anti-join / Negation: Ensure they have NO known connections
-        not { $p knows $_ }
+        $a: Account
     }
-    return { 
-        $p.slug, 
-        $p.name, 
-        $c.name as company_name 
+    return {
+        $a.node_key,
+        $a.name,
+        $a.risk_score
     }
-    order { 
-        # 3. Hybrid Search: Reciprocal Rank Fusion (RRF) combining:
-        #    - Vector ANN (nearest) on their embedding
-        #    - Full-Text search (bm25) on their bio
-        rrf(nearest($p.embedding, $vq), bm25($p.bio, $tq)) 
+    order {
+        bm25($a.name, $query)
     }
-    # Ranking queries MUST have a limit
-    limit 10
+    limit 5
 }

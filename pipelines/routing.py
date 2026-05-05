@@ -5,8 +5,14 @@ import logging
 from typing import Optional, Any
 from models.account_event import AccountEvent
 from engine.omnigraph.ingestion_sink import OmnigraphSink
+from google import genai
+import instructor
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+class ResolutionDecision(BaseModel):
+    is_match: bool
 
 class OmnigraphRoutingManager:
     """
@@ -55,6 +61,58 @@ class OmnigraphRoutingManager:
         # In Sprint 17+, a separate corroboration service or Tier-3 LLM 
         # will call evaluate_and_merge later.
         logger.info(f"Event branched: {event.company_name} is now buffered in Omnigraph branch '{branch_id}'")
+        return False
+
+    def evaluate_and_resolve(self, branch_id: str, node_key: str, company_name: str) -> bool:
+        """
+        Executes Tier-3 LLM Judge to evaluate a side-branch fragment against main candidates.
+        """
+        # 1. Fetch Fragment
+        try:
+            fragment_context = self.sink.client.get_account_context(node_key, branch=branch_id)
+        except Exception as e:
+            logger.error(f"Failed to fetch fragment context for {node_key} on branch {branch_id}: {e}")
+            return False
+
+        # 2. Search Candidates
+        try:
+            candidates = self.sink.client._execute(
+                "read", 
+                "complex_search.gq", 
+                {"query": company_name}, 
+                branch="main"
+            )
+        except Exception as e:
+            logger.error(f"Failed to search candidates for {company_name}: {e}")
+            return False
+
+        # 3. Evaluate
+        try:
+            client = instructor.from_gemini(
+                genai.Client(),
+                mode=instructor.Mode.GEMINI_JSON,
+            )
+            
+            resp = client.chat.completions.create(
+                model="gemini-2.5-flash",
+                response_model=ResolutionDecision,
+                messages=[
+                    {"role": "system", "content": "You are an entity resolution judge. Determine if the fragment belongs to one of the main branch candidates."},
+                    {"role": "user", "content": f"Fragment Context: {fragment_context}\n\nCandidates Context: {candidates}\n\nDoes the fragment match a candidate?"}
+                ]
+            )
+            
+            is_match = resp.is_match
+        except Exception as e:
+            logger.error(f"LLM evaluation failed for {company_name}: {e}")
+            return False
+
+        # 4. Execute
+        if is_match:
+            logger.info(f"Tier-3 LLM matched fragment {node_key} to a candidate. Merging branch {branch_id}.")
+            return self.sink.evaluate_and_merge(branch_id, evidence_score=100)
+            
+        logger.info(f"Tier-3 LLM rejected fragment {node_key}. Branch {branch_id} remains open.")
         return False
 
 _manager: Optional[OmnigraphRoutingManager] = None
