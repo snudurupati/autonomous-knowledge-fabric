@@ -26,11 +26,12 @@ class OmnigraphClient:
             "params": params or {}
         }
         
-        # If snapshot_id is provided, use it and omit branch
+        # Always provide the branch. If snapshot_id is provided, add it to pin the read
+        # and achieve sub-ms latency in Omnigraph 0.4.1.
+        if branch:
+            payload["branch"] = branch
         if snapshot_id:
             payload["snapshot"] = snapshot_id
-        elif branch:
-            payload["branch"] = branch
         
         max_retries = 3
         retry_delay = 0.5
