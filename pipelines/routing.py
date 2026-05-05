@@ -88,9 +88,9 @@ class OmnigraphRoutingManager:
 
         # 3. Evaluate
         try:
-            client = instructor.from_gemini(
+            client = instructor.from_genai(
                 genai.Client(),
-                mode=instructor.Mode.GEMINI_JSON,
+                mode=instructor.Mode.GENAI_STRUCTURED_OUTPUTS,
             )
             
             resp = client.chat.completions.create(
