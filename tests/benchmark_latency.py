@@ -62,29 +62,49 @@ def run_benchmark(num_events=5):
 
     # 3. Read Latency
     print("🔍 Measuring read latencies...")
-    read_latencies = []
+    branch_reads = []
+    snapshot_reads = []
+    
+    # Get a pinned snapshot ID for the fast path
+    try:
+        snapshot_id = client.get_latest_snapshot_id()
+        print(f"📍 Pinned Snapshot ID: {snapshot_id}")
+    except:
+        snapshot_id = None
+
     for i in range(5):
+        key = f"indiv_corp_{i}"
+        # Measure Branch Read (Slow Path - includes S3 Head Check)
         try:
             start = time.monotonic()
-            client.get_account_context(f"indiv_corp_{i}")
-            read_latencies.append((time.monotonic() - start) * 1000)
+            client.get_account_context(key)
+            branch_reads.append((time.monotonic() - start) * 1000)
         except: pass
+        
+        # Measure Snapshot Read (Fast Path - Pinned/Cached)
+        if snapshot_id:
+            try:
+                start = time.monotonic()
+                client.get_account_context(key, snapshot_id=snapshot_id)
+                snapshot_reads.append((time.monotonic() - start) * 1000)
+            except: pass
 
     # 4. Output Stats
     p50_indiv = statistics.median(individual_latencies) if individual_latencies else 0
-    p50_read = statistics.median(read_latencies) if read_latencies else 0
+    p50_branch_read = statistics.median(branch_reads) if branch_reads else 0
+    p50_snapshot_read = statistics.median(snapshot_reads) if snapshot_reads else 0
     
-    print("\n" + "="*70)
-    print(f"{'Ingestion Method':<24} | {'Latency per Event':<20} | {'S3 Commits'}")
-    print("-" * 70)
-    print(f"{'Individual GQL':<24} | {p50_indiv/1000:<17.2f} s | {'1 per event'}")
-    print(f"{'Batched JSONL (CLI)':<24} | {batch_per_event_ms:<17.2f} ms | {'1 per batch'}")
-    print(f"{'Context Read':<24} | {p50_read:<17.2f} ms | {'N/A'}")
-    print("="*70)
-    print("RCA: Individual GQL writes are penalized by S3 commit latency.")
-    print("Note: 0.4.1 reduced this from ~70s to ~3s via better commit pipelining.")
-    print("Optimization: Real-world pipelines SHOULD still batch for max throughput.")
-    print("="*70 + "\n")
+    print("\n" + "="*75)
+    print(f"{'Operation Profile':<24} | {'Latency':<18} | {'Why?'}")
+    print("-" * 75)
+    print(f"{'Individual GQL Write':<24} | {p50_indiv/1000:<15.2f} s | 1 S3 Commit")
+    print(f"{'Batched JSONL Load':<24} | {batch_per_event_ms:<15.2f} ms| 0.01 S3 Commits/evt")
+    print(f"{'Branch Read (Head)':<24} | {p50_branch_read:<15.2f} ms| Includes S3 Head check")
+    print(f"{'Snapshot Read (Pinned)':<24} | {p50_snapshot_read:<15.2f} ms| Cached / No S3 check")
+    print("="*75)
+    print("RCA: Branch reads incur S3 head-check overhead. Use Pinned Snapshots for RAG.")
+    print("Note: 0.4.1 optimized commits; 0.3.1 was ~20x slower on writes.")
+    print("="*75 + "\n")
 
 if __name__ == "__main__":
     run_benchmark(3)
