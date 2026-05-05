@@ -191,25 +191,26 @@ streamlit run dashboard/app.py
 
 ---
 
-## 📊 Performance Benchmarks (Sprint 20 Update)
+## 📊 Performance Benchmarks (Sprint 20 Update - Omnigraph 0.4.1)
 
-| Metric | Omnigraph (Local S3 Simulator) | Omnigraph (Batched JSONL) | Memgraph (In-Memory) |
+| Metric | Omnigraph 0.3.1 (Local) | Omnigraph 0.4.1 (Local) | Memgraph (In-Memory) |
 | :--- | :--- | :--- | :--- |
-| **P50 Upsert Latency** | **~70,000 ms** (Single-row) | **~300 ms** (100-event batch) | ~2.00 ms |
-| **P50 Context Read** | **~80 ms** | **~80 ms** | ~1.50 ms |
+| **P50 Upsert Latency** | ~70,000 ms | **~3,300 ms** | ~2.00 ms |
+| **P50 Batched (100 evts)**| ~304 ms/evt | **~53 ms/evt** | ~2.00 ms |
+| **P50 Context Read** | ~80 ms | **~80 ms** | ~1.50 ms |
 
-### 🧠 Write Path RCA: The "S3 Commit Penalty"
+### 🧠 Write Path RCA: The "S3 Commit Penalty" (Optimized in 0.4.1)
 
-Through rigorous benchmarking in Sprint 20, we identified that the ~70s latency observed during single-row GQL mutations is not a code bug, but an architectural characteristic of S3-native storage in local environments:
+In Sprint 20, we identified a significant "S3 Commit Penalty" (~30s-70s) in version 0.3.1. Upgrading to **Omnigraph 0.4.1** has dramatically reduced this overhead:
 
-1.  **Atomic Commit Overhead**: Every `insert` mutation triggers a full MVCC commit cycle (writing data, manifest updates, and head pointers). In local S3 simulators (RustFS/MinIO) via Docker, this cycle costs **~25s-30s** regardless of payload size.
-2.  **IMDS Timeout**: AWS SDKs may attempt to reach the EC2 Metadata Service (`169.254.169.254`) before using local credentials, adding a 10s-15s penalty per client initialization.
-3.  **Real-World vs. Local**: On production AWS S3, this commit penalty typically shrinks to **2s-5s** due to S3's distributed metadata handling.
+1.  **Commit Pipelining**: 0.4.1 introduces better pipelining of metadata operations, reducing the single-row write latency from 70s to **~3.3s**.
+2.  **Batched Efficiency**: Batched loads now run at **~53ms per event**, making real-time streaming context much more viable even on local S3 simulators.
+3.  **IMDS Disable**: The `AWS_EC2_METADATA_DISABLED=true` workaround remains essential for preventing credential discovery delays.
 
-**Workarounds implemented:**
-*   **Batching Strategy**: Real-world ingestion sinks *must* batch events (e.g., 100+ events per commit) to amortize the 30s penalty, bringing per-event latency down to sub-second levels.
-*   **IMDS Disable**: Added `AWS_EC2_METADATA_DISABLED=true` to the environment to bypass credential discovery timeouts.
-*   **Transactional GQL**: Consolidated Account, Event, and Link mutations into a single `ingest_event_complete.gq` query to pay the "Commit Penalty" only once per ingestion.
+**Current Recommendation:**
+*   **Always use 0.4.1+** for local development.
+*   **Maintain Batching**: While 3.3s is much better, batching still provides a 60x throughput improvement over individual mutations.
+*   **Transactional GQL**: The `ingest_event_complete.gq` pattern continues to be the most efficient way to maintain structural integrity in a single commit.
 
 ---
 

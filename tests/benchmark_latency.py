@@ -81,8 +81,9 @@ def run_benchmark(num_events=5):
     print(f"{'Batched JSONL (CLI)':<24} | {batch_per_event_ms:<17.2f} ms | {'1 per batch'}")
     print(f"{'Context Read':<24} | {p50_read:<17.2f} ms | {'N/A'}")
     print("="*70)
-    print("RCA: Individual GQL writes are penalized by S3 commit latency (~30s).")
-    print("Optimization: Real-world pipelines MUST batch ingestions.")
+    print("RCA: Individual GQL writes are penalized by S3 commit latency.")
+    print("Note: 0.4.1 reduced this from ~70s to ~3s via better commit pipelining.")
+    print("Optimization: Real-world pipelines SHOULD still batch for max throughput.")
     print("="*70 + "\n")
 
 if __name__ == "__main__":
