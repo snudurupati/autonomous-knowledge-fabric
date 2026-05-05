@@ -1,0 +1,14 @@
+query search_accounts($query: String) {
+    match {
+        $a: Account
+    }
+    return {
+        $a.node_key,
+        $a.name,
+        $a.risk_score
+    }
+    order {
+        bm25($a.name, $query)
+    }
+    limit 10
+}
