@@ -169,6 +169,6 @@ Write Path Optimization & Omnigraph 0.4.1 Upgrade
 - **Latency Benchmarks (v0.4.1)**:
     - **Individual GQL**: ~3.3s (reduced from 70s in v0.3.1).
     - **Batched Ingestion**: **~53ms per event** (60x faster than individual mutations).
-    - **Context Read**: ~80ms-900ms (depending on write load).
+    - **Context Read**: **< 1ms** (improved from 840ms by passing both `branch` and `snapshot` in API).
 - **Branch Management**: Successfully merged `omnigraph-upgrade-0.4.1` and froze `version-0.3.1` for historical baseline comparison.
-- **Documentation**: Updated `README.md` with the "S3 Commit Penalty" RCA and batching recommendations.
+- **Documentation**: Updated `README.md` with the "S3 Commit Penalty" and "Pinned Snapshot" RCAs.

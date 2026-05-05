@@ -197,7 +197,11 @@ streamlit run dashboard/app.py
 | :--- | :--- | :--- | :--- |
 | **P50 Upsert Latency** | ~70,000 ms | **~3,300 ms** | ~2.00 ms |
 | **P50 Batched (100 evts)**| ~304 ms/evt | **~53 ms/evt** | ~2.00 ms |
-| **P50 Context Read** | ~80 ms | **~80 ms** | ~1.50 ms |
+| **P50 Context Read** | ~80 ms | **< 1 ms** | ~1.50 ms |
+
+### 🧠 Read Path RCA: The "Pinned Snapshot" Requirement (v0.4.1)
+
+In Omnigraph 0.4.1, achieving sub-millisecond read latency requires hitting an optimized execution path. We discovered that the server requires **both** the `branch` and `snapshot` fields to be present in the request payload to route the query through this fast path. Omitting the `branch` causes the server to fall back to a slower, unoptimized execution path (~840ms). Updating the client to pass both parameters restored pinned snapshot reads to **< 1ms**.
 
 ### 🧠 Write Path RCA: The "S3 Commit Penalty" (Optimized in 0.4.1)
 
@@ -313,3 +317,4 @@ MIT — use it, fork it, build on it.
 ---
 
 *Built by [Sreeram Nudurupati](https://www.linkedin.com/in/snudurupati) — a practitioner who got tired of explaining to stakeholders why the AI was confidently wrong.*
+fidently wrong.*

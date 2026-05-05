@@ -26,6 +26,7 @@
 - [x] Sprint 16 — Final Polish & Deployment
 - [x] Sprint 17 — Omnigraph Ingestion Sink (Sprint 17)
 - [x] Sprint 18 - Omnigrapg .gq Configuration Pivot & Read API Benchmarking
+- [x] Sprint 20 — Write Path Optimization & Omnigraph 0.4.1 Upgrade
 
 ## Upcoming Sprints
 - [ ] Sprint 18 — Branch-based Corroboration
