@@ -105,19 +105,41 @@ class OmnigraphClientWrapper:
             return []
 
     def search_accounts(self, query: str) -> List[Dict[str, Any]]:
-        """Simple mock of search since Omnigraph doesn't have substring search yet."""
-        # For now, we'll try to get the account directly
+        """Search for accounts using BM25 text search with a client-side substring fallback."""
         try:
-            resp = self.client.get_account(node_key=query)
+            # Try Omnigraph's text search first
+            resp = self.client._execute("read", "search.gq", {"query": query})
             rows = resp.get("rows", [])
-            results = []
-            for row in rows:
-                results.append({
-                    "company_name": row.get("a.name"),
-                    "node_key": row.get("a.node_key")
-                })
-            return results
-        except:
+            
+            if rows:
+                results = []
+                for row in rows:
+                    results.append({
+                        "company_name": row.get("a.name"),
+                        "node_key": row.get("a.node_key"),
+                        "risk_score": row.get("a.risk_score", 0)
+                    })
+                return results
+            
+            # Fallback: Client-side partial matching if no direct results
+            # (Fetching all accounts is efficient in Omnigraph due to Lance/S3 memory mapping)
+            all_accounts = self.get_high_risk_accounts(min_score=0)
+            query_lower = query.lower()
+            matches = []
+            for acc in all_accounts:
+                if query_lower in acc['company'].lower():
+                    matches.append({
+                        "company_name": acc['company'],
+                        "node_key": acc['company'], # node_key is usually the name in this project
+                        "risk_score": acc['score']
+                    })
+            
+            # Sort matches by length (shorter names often closer to exact match)
+            matches.sort(key=lambda x: len(x['company_name']))
+            return matches[:10]
+            
+        except Exception as e:
+            logger.error(f"Error searching accounts: {e}")
             return []
 
     def find_potential_matches(self, domain: str | None = None, cik: str | None = None) -> List[Dict[str, Any]]:
