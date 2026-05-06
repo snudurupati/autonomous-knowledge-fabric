@@ -6,10 +6,11 @@ import time
 import urllib.parse
 import threading
 from typing import Dict, Any, Optional, List
-from observability.telemetry import latency_tracker
+from observability.telemetry import latency_tracker, tracer
 from models.account_event import AccountEvent
 from engine.omnigraph.client import OmnigraphClient
 from scoring.account_health import calculate_risk_score
+from opentelemetry import trace
 
 # Configure logging for observability and benchmarking
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,7 +40,7 @@ class OmnigraphSink:
         # Batching configuration
         self.batch_size = batch_size
         self.flush_interval_secs = flush_interval_secs
-        self.buffer: List[AccountEvent] = []
+        self.buffer: List[tuple] = [] # Stores (event, target_branch)
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         
@@ -55,25 +56,43 @@ class OmnigraphSink:
 
     def ingest_unverified_entity(self, event: AccountEvent) -> str:
         """
-        Maps an AccountEvent to an Account node upsert.
-        Calculates risk score and uses Omnigraph's @key for deterministic merging.
-        Returns the branch ID where the ingestion occurred.
+        Maps an AccountEvent to an Account node upsert into a unique side-branch.
         """
-        return self.ingest_event(event)
+        target_branch = f"fragment-{uuid.uuid4().hex[:8]}"
+        try:
+            requests.post(f"{self.server_url}/branches", json={
+                "name": target_branch,
+                "base": self.main_branch
+            }).raise_for_status()
+        except Exception as e:
+            logger.error(f"Failed to create branch {target_branch}: {e}")
+            # Fallback to main if branch creation fails
+            target_branch = self.main_branch
 
-    def ingest_event(self, event: AccountEvent) -> str:
-        """
-        Ingests an event into Omnigraph. 
-        If buffering is enabled, adds to buffer. Otherwise, commits immediately.
-        """
         if self.use_buffering:
             with self._lock:
-                self.buffer.append(event)
+                self.buffer.append((event, target_branch))
                 buffer_len = len(self.buffer)
             
             if buffer_len >= self.batch_size:
                 self.flush()
-            return self.main_branch # Buffered events always target main branch in this implementation
+            return target_branch
+            
+        return self._commit_now(event, branch=target_branch)
+
+    def ingest_event(self, event: AccountEvent) -> str:
+        """
+        Ingests an event into Omnigraph's main branch. 
+        If buffering is enabled, adds to buffer. Otherwise, commits immediately.
+        """
+        if self.use_buffering:
+            with self._lock:
+                self.buffer.append((event, self.main_branch))
+                buffer_len = len(self.buffer)
+            
+            if buffer_len >= self.batch_size:
+                self.flush()
+            return self.main_branch
         
         return self._commit_now(event)
 
@@ -88,24 +107,35 @@ class OmnigraphSink:
         signals = [{"name": s.value, "timestamp": event.timestamp.isoformat()} for s in event.risk_signals]
         risk_score = calculate_risk_score(signals)
         
-        try:
-            self.client.ingest_event_complete(
-                name=event.company_name,
-                node_key=event.company_name,
-                risk_score=risk_score,
-                event_id=event.event_id,
-                source=event.source.value,
-                timestamp=event.timestamp.date().isoformat(),
-                risk_signals=[s.value for s in event.risk_signals],
-                raw_text=event.raw_text,
-                branch=target_branch
-            )
-            latency_ms = (time.monotonic() - start_time) * 1000
-            logger.info(f"INGEST_SUCCESS entity='{event.company_name}' latency_ms={latency_ms:.1f}")
-            return target_branch
-        except Exception as e:
-            logger.error(f"Failed to ingest entity '{event.company_name}': {e}")
-            raise e
+        with tracer.start_as_current_span("pipeline.event") as span:
+            span.set_attribute("event_id", event.event_id)
+            span.set_attribute("company", event.company_name)
+            span.set_attribute("branch", target_branch)
+            
+            try:
+                self.client.ingest_event_complete(
+                    name=event.company_name,
+                    node_key=event.company_name,
+                    risk_score=risk_score,
+                    event_id=event.event_id,
+                    source=event.source.value,
+                    timestamp=event.timestamp.date().isoformat(),
+                    risk_signals=[s.value for s in event.risk_signals],
+                    raw_text=event.raw_text,
+                    branch=target_branch
+                )
+                latency_ms = (time.monotonic() - start_time) * 1000
+                logger.info(f"INGEST_SUCCESS entity='{event.company_name}' latency_ms={latency_ms:.1f}")
+                
+                # Mark graph as written for latency tracking
+                latency_tracker.record_graph_written(event.event_id)
+                
+                return target_branch
+            except Exception as e:
+                span.record_exception(e)
+                span.set_status(trace.Status(trace.StatusCode.ERROR))
+                logger.error(f"Failed to ingest entity '{event.company_name}': {e}")
+                raise e
 
     def flush(self):
         """Flushes the current buffer to Omnigraph in a single transactional batch."""
@@ -118,25 +148,20 @@ class OmnigraphSink:
         start_time = time.monotonic()
         logger.info(f"Flushing batch of {len(batch_to_flush)} events to Omnigraph...")
         
-        # In a real batch implementation with v0.4.2, we would use a bulk ingest endpoint.
-        # Since ingest_event_complete.gq is single-transaction, we'll use it for each but 
-        # ideally the server handles the batch. 
-        # For now, we simulate the performance win by reducing the number of synchronization points
-        # if the server supported a proper batch mutation. 
-        # TO-DO: Implement 'ingest_batch.gq' when Omnigraph multi-statement support matures.
-        
-        success_count = 0
-        for event in batch_to_flush:
-            try:
-                # Still using single calls but without the 'sync_branch=true' overhead on every call
-                # if the client were optimized to skip sync on intermediate batch items.
-                self._commit_now(event)
-                success_count += 1
-            except Exception as e:
-                logger.error(f"Batch item failed: {e}")
-        
-        latency_ms = (time.monotonic() - start_time) * 1000
-        logger.info(f"BATCH_FLUSH_COMPLETE success={success_count}/{len(batch_to_flush)} latency_ms={latency_ms:.1f} avg_ms={latency_ms/max(1, success_count):.1f}")
+        with tracer.start_as_current_span("pipeline.batch_flush") as span:
+            span.set_attribute("batch_size", len(batch_to_flush))
+            
+            success_count = 0
+            for event, target_branch in batch_to_flush:
+                try:
+                    self._commit_now(event, branch=target_branch)
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"Batch item failed: {e}")
+            
+            latency_ms = (time.monotonic() - start_time) * 1000
+            logger.info(f"BATCH_FLUSH_COMPLETE success={success_count}/{len(batch_to_flush)} latency_ms={latency_ms:.1f} avg_ms={latency_ms/max(1, success_count):.1f}")
+            span.set_attribute("success_count", success_count)
 
     def _background_flush(self):
         """Background loop to ensure data is flushed even if batch size isn't reached."""
@@ -160,49 +185,29 @@ class OmnigraphSink:
             return True
             
         start_time = time.monotonic()
-        try:
-            if evidence_score > threshold:
-                merge_resp = requests.post(f"{self.server_url}/branches/merge", json={
-                    "source": branch_id,
-                    "target": self.main_branch,
-                    "strategy": "fast-forward"
-                })
-                merge_resp.raise_for_status()
-                logger.info(f"MERGE_SUCCESS branch={branch_id} latency_ms={(time.monotonic() - start_time)*1000:.1f}")
-                return True
-            else:
-                requests.delete(f"{self.server_url}/branches/{branch_id}").raise_for_status()
-                logger.warning(f"MERGE_DROPPED branch={branch_id}")
-                return False
-        except Exception as e:
-            logger.error(f"Merge failed for {branch_id}: {e}")
-            return False
-
-    def evaluate_and_merge(self, branch_id: str, evidence_score: int, threshold: int = 70) -> bool:
-        """
-        Merges a side-branch into main if threshold met.
-        """
-        if branch_id == self.main_branch:
-            return True
+        with tracer.start_as_current_span("pipeline.branch_merge") as span:
+            span.set_attribute("branch_id", branch_id)
+            span.set_attribute("evidence_score", evidence_score)
             
-        start_time = time.monotonic()
-        try:
-            if evidence_score > threshold:
-                merge_resp = requests.post(f"{self.server_url}/branches/merge", json={
-                    "source": branch_id,
-                    "target": self.main_branch,
-                    "strategy": "fast-forward"
-                })
-                merge_resp.raise_for_status()
-                logger.info(f"MERGE_SUCCESS branch={branch_id} latency_ms={(time.monotonic() - start_time)*1000:.1f}")
-                return True
-            else:
-                requests.delete(f"{self.server_url}/branches/{branch_id}").raise_for_status()
-                logger.warning(f"MERGE_DROPPED branch={branch_id}")
+            try:
+                if evidence_score > threshold:
+                    merge_resp = requests.post(f"{self.server_url}/branches/merge", json={
+                        "source": branch_id,
+                        "target": self.main_branch,
+                        "strategy": "fast-forward"
+                    })
+                    merge_resp.raise_for_status()
+                    logger.info(f"MERGE_SUCCESS branch={branch_id} latency_ms={(time.monotonic() - start_time)*1000:.1f}")
+                    return True
+                else:
+                    requests.delete(f"{self.server_url}/branches/{branch_id}").raise_for_status()
+                    logger.warning(f"MERGE_DROPPED branch={branch_id}")
+                    return False
+            except Exception as e:
+                span.record_exception(e)
+                span.set_status(trace.Status(trace.StatusCode.ERROR))
+                logger.error(f"Merge failed for {branch_id}: {e}")
                 return False
-        except Exception as e:
-            logger.error(f"Merge failed for {branch_id}: {e}")
-            return False
 
 if __name__ == "__main__":
     from models.account_event import EventSource, RiskSignal
