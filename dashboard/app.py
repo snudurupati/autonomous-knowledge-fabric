@@ -6,7 +6,7 @@ from pathlib import Path
 # Add project root to sys.path to allow imports from graph, models, etc.
 root_path = str(Path(__file__).resolve().parent.parent)
 if root_path not in sys.path:
-    sys.path.append(root_path)
+    sys.path.insert(0, root_path)
 
 from graph.omnigraph_client import OmnigraphClientWrapper
 from datetime import datetime, timezone
@@ -72,8 +72,8 @@ with col2:
                         st.write(f"**Signals:** {', '.join(ctx['risk_signals']) or 'None'}")
                         st.write(f"**Last Updated:** {ctx['last_updated']}")
                         st.write("**Recent Events:**")
-                        for event in ctx['recent_events']:
-                            st.text_area("Event Detail", event, height=100, disabled=True)
+                        for i, event in enumerate(ctx['recent_events']):
+                            st.text_area("Event Detail", event, height=100, disabled=True, key=f"evt_{res['company_name']}_{i}")
 
 # Footer/Status
 st.divider()
