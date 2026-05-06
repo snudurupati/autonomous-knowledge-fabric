@@ -16,10 +16,21 @@ class OmnigraphClientWrapper:
     """
     A high-level wrapper for OmnigraphClient that provides an interface
     similar to the legacy MemgraphClient.
+    
+    v0.4.3: Support for Pinned Snapshot Reads (Fast Path) to achieve <1ms retrieval latency.
     """
-    def __init__(self, base_url: str = "http://127.0.0.1:8080"):
+    def __init__(self, base_url: str = "http://127.0.0.1:8080", snapshot_id: Optional[str] = None):
         self.client = OmnigraphClient(base_url=base_url)
         self.sink = OmnigraphSink(server_url=base_url)
+        self.snapshot_id = snapshot_id
+
+    def get_latest_snapshot(self) -> Optional[str]:
+        """Fetch the latest available snapshot ID from the server."""
+        try:
+            return self.client.get_latest_snapshot_id()
+        except Exception as e:
+            logger.error(f"Error fetching latest snapshot: {e}")
+            return None
 
     def upsert_account(self, event: AccountEvent) -> str:
         """Upsert an account node. Returns the node_key."""
@@ -36,13 +47,14 @@ class OmnigraphClientWrapper:
         """Upsert an event using the OmnigraphSink."""
         self.sink.ingest_event(event)
 
-    def get_account_context(self, company_name: str) -> Optional[Dict[str, Any]]:
+    def get_account_context(self, company_name: str, snapshot_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Return structured account context for LLM agent consumption."""
         # Omnigraph uses node_key as the primary identifier.
         node_key = company_name 
+        target_snapshot = snapshot_id or self.snapshot_id
         
         try:
-            resp = self.client.get_account_context(node_key=node_key)
+            resp = self.client.get_account_context(node_key=node_key, snapshot_id=target_snapshot)
             rows = resp.get("rows", [])
             if not rows:
                 return None
@@ -84,10 +96,11 @@ class OmnigraphClientWrapper:
             logger.error(f"Error fetching account context for {company_name}: {e}")
             return None
 
-    def get_high_risk_accounts(self, min_score: int = 70) -> List[Dict[str, Any]]:
+    def get_high_risk_accounts(self, min_score: int = 70, snapshot_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Return accounts with their risk signals and calculated scores."""
+        target_snapshot = snapshot_id or self.snapshot_id
         try:
-            resp = self.client.get_high_risk_accounts(min_score=min_score)
+            resp = self.client.get_high_risk_accounts(min_score=min_score, snapshot_id=target_snapshot)
             rows = resp.get("rows", [])
             
             results = []
@@ -104,11 +117,12 @@ class OmnigraphClientWrapper:
             logger.error(f"Error fetching high risk accounts: {e}")
             return []
 
-    def search_accounts(self, query: str) -> List[Dict[str, Any]]:
+    def search_accounts(self, query: str, snapshot_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Search for accounts using BM25 text search with a client-side substring fallback."""
+        target_snapshot = snapshot_id or self.snapshot_id
         try:
             # Try Omnigraph's text search first
-            resp = self.client._execute("read", "search.gq", {"query": query})
+            resp = self.client._execute("read", "search.gq", {"query": query}, snapshot_id=target_snapshot)
             rows = resp.get("rows", [])
             
             if rows:
@@ -123,7 +137,7 @@ class OmnigraphClientWrapper:
             
             # Fallback: Client-side partial matching if no direct results
             # (Fetching all accounts is efficient in Omnigraph due to Lance/S3 memory mapping)
-            all_accounts = self.get_high_risk_accounts(min_score=0)
+            all_accounts = self.get_high_risk_accounts(min_score=0, snapshot_id=target_snapshot)
             query_lower = query.lower()
             matches = []
             for acc in all_accounts:
@@ -151,20 +165,21 @@ class OmnigraphClientWrapper:
         """Placeholder for name-based matching."""
         return self.search_accounts(name)
 
-    def get_platform_stats(self) -> Dict[str, int]:
+    def get_platform_stats(self, snapshot_id: Optional[str] = None) -> Dict[str, int]:
         """Return global platform metrics: total accounts, events, and relationships."""
         stats = {"accounts": 0, "events": 0, "relationships": 0}
+        target_snapshot = snapshot_id or self.snapshot_id
         try:
             # Omnigraph 0.4.1 prefers independent queries for global counts to avoid join overhead
-            acc_resp = self.client._execute("read", "count_accounts.gq")
+            acc_resp = self.client._execute("read", "count_accounts.gq", snapshot_id=target_snapshot)
             if acc_resp.get("rows"):
                 stats["accounts"] = acc_resp["rows"][0].get("c", 0)
                 
-            evt_resp = self.client._execute("read", "count_events.gq")
+            evt_resp = self.client._execute("read", "count_events.gq", snapshot_id=target_snapshot)
             if evt_resp.get("rows"):
                 stats["events"] = evt_resp["rows"][0].get("c", 0)
                 
-            rel_resp = self.client._execute("read", "count_relationships.gq")
+            rel_resp = self.client._execute("read", "count_relationships.gq", snapshot_id=target_snapshot)
             if rel_resp.get("rows"):
                 stats["relationships"] = rel_resp["rows"][0].get("c", 0)
                 

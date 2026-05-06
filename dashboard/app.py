@@ -18,9 +18,31 @@ st.subheader("Real-time Account Risk Intelligence")
 
 @st.cache_resource
 def get_client():
-    return OmnigraphClientWrapper()
+    wrapper = OmnigraphClientWrapper()
+    # Fetch the latest snapshot to pin the session
+    wrapper.snapshot_id = wrapper.get_latest_snapshot()
+    return wrapper
 
 client = get_client()
+
+# Sidebar for controls
+st.sidebar.header("Controls")
+if st.sidebar.button("Refresh Data"):
+    st.cache_data.clear()
+
+if st.sidebar.button("Sync to Head"):
+    latest = client.get_latest_snapshot()
+    if latest != client.snapshot_id:
+        client.snapshot_id = latest
+        st.sidebar.success(f"Synced to {latest[:8]}...")
+        st.cache_data.clear() # Force refresh of any cached queries
+    else:
+        st.sidebar.info("Already at head.")
+
+if client.snapshot_id:
+    st.sidebar.caption(f"Pinned Snapshot: {client.snapshot_id[:12]}")
+else:
+    st.sidebar.warning("Reading from Branch Head (Slow Path)")
 
 # Platform Overview Scorecards
 stats = client.get_platform_stats()
@@ -36,11 +58,6 @@ with s4:
     st.metric("Graph Status", "HEALTHY", delta="v0.4.1 (Lance)")
 
 st.divider()
-
-# Sidebar for controls
-st.sidebar.header("Controls")
-if st.sidebar.button("Refresh Data"):
-    st.cache_data.clear()
 
 # Main Dashboard
 col1, col2 = st.columns([2, 1])
