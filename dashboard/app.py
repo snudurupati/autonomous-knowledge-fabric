@@ -31,8 +31,27 @@ if st.sidebar.button("Refresh Data"):
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.write("### High Risk Accounts")
-    high_risk = client.get_high_risk_accounts()
+    st.write("### 🔥 Top 5 High Risk Accounts")
+    # Fetch top accounts (ordered by score desc)
+    all_accounts = client.get_high_risk_accounts(min_score=0)
+    top_5 = all_accounts[:5]
+    
+    if not top_5:
+        st.info("No accounts detected yet.")
+    else:
+        m_cols = st.columns(len(top_5))
+        for i, acc in enumerate(top_5):
+            with m_cols[i]:
+                st.metric(
+                    label=acc['company'],
+                    value=f"{acc['score']}",
+                    delta=acc['level'],
+                    delta_color="off" # Level isn't a "change"
+                )
+    
+    st.divider()
+    st.write("### 📊 All High Risk Accounts (Score ≥ 70)")
+    high_risk = [a for a in all_accounts if a['score'] >= 70]
     
     if not high_risk:
         st.info("No high risk accounts detected yet.")
