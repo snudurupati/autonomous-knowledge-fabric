@@ -153,17 +153,22 @@ class OmnigraphClientWrapper:
 
     def get_platform_stats(self) -> Dict[str, int]:
         """Return global platform metrics: total accounts, events, and relationships."""
+        stats = {"accounts": 0, "events": 0, "relationships": 0}
         try:
-            resp = self.client._execute("read", "get_platform_stats.gq")
-            rows = resp.get("rows", [])
-            if rows:
-                row = rows[0]
-                return {
-                    "accounts": row.get("accounts", 0),
-                    "events": row.get("events", 0),
-                    "relationships": row.get("relationships", 0)
-                }
-            return {"accounts": 0, "events": 0, "relationships": 0}
+            # Omnigraph 0.4.1 prefers independent queries for global counts to avoid join overhead
+            acc_resp = self.client._execute("read", "count_accounts.gq")
+            if acc_resp.get("rows"):
+                stats["accounts"] = acc_resp["rows"][0].get("c", 0)
+                
+            evt_resp = self.client._execute("read", "count_events.gq")
+            if evt_resp.get("rows"):
+                stats["events"] = evt_resp["rows"][0].get("c", 0)
+                
+            rel_resp = self.client._execute("read", "count_relationships.gq")
+            if rel_resp.get("rows"):
+                stats["relationships"] = rel_resp["rows"][0].get("c", 0)
+                
+            return stats
         except Exception as e:
             logger.error(f"Error fetching platform stats: {e}")
-            return {"accounts": 0, "events": 0, "relationships": 0}
+            return stats
