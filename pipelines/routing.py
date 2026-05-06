@@ -117,12 +117,6 @@ def get_routing_manager() -> OmnigraphRoutingManager:
     global _manager
     if _manager is None:
         # Enable batching to optimize S3 commits
-        sink = OmnigraphSink(use_buffering=True, batch_size=20, flush_interval_secs=3.0)
-        _manager = OmnigraphRoutingManager(sink=sink)
-    return _manager
-global _manager
-    if _manager is None:
-        # Enable batching to optimize S3 commits
         sink = OmnigraphSink(use_buffering=True, batch_size=100, flush_interval_secs=3.0)
         _manager = OmnigraphRoutingManager(sink=sink)
     return _manager
