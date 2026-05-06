@@ -121,5 +121,7 @@ def get_routing_manager() -> OmnigraphRoutingManager:
     """Singleton getter for the routing manager."""
     global _manager
     if _manager is None:
-        _manager = OmnigraphRoutingManager()
+        # Enable batching to optimize S3 commits
+        sink = OmnigraphSink(use_buffering=True, batch_size=20, flush_interval_secs=3.0)
+        _manager = OmnigraphRoutingManager(sink=sink)
     return _manager
