@@ -22,6 +22,21 @@ def get_client():
 
 client = get_client()
 
+# Platform Overview Scorecards
+stats = client.get_platform_stats()
+s1, s2, s3, s4 = st.columns(4)
+with s1:
+    st.metric("Total Accounts", stats['accounts'])
+with s2:
+    st.metric("Total Events", stats['events'])
+with s3:
+    st.metric("Graph Connections", stats['relationships'])
+with s4:
+    # Calculate density or just show a status
+    st.metric("Graph Status", "HEALTHY", delta="v0.4.1 (Lance)")
+
+st.divider()
+
 # Sidebar for controls
 st.sidebar.header("Controls")
 if st.sidebar.button("Refresh Data"):

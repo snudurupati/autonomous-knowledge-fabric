@@ -150,3 +150,20 @@ class OmnigraphClientWrapper:
     def find_by_name(self, name: str) -> List[Dict[str, Any]]:
         """Placeholder for name-based matching."""
         return self.search_accounts(name)
+
+    def get_platform_stats(self) -> Dict[str, int]:
+        """Return global platform metrics: total accounts, events, and relationships."""
+        try:
+            resp = self.client._execute("read", "get_platform_stats.gq")
+            rows = resp.get("rows", [])
+            if rows:
+                row = rows[0]
+                return {
+                    "accounts": row.get("accounts", 0),
+                    "events": row.get("events", 0),
+                    "relationships": row.get("relationships", 0)
+                }
+            return {"accounts": 0, "events": 0, "relationships": 0}
+        except Exception as e:
+            logger.error(f"Error fetching platform stats: {e}")
+            return {"accounts": 0, "events": 0, "relationships": 0}

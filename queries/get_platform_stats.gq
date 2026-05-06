@@ -1,0 +1,16 @@
+query get_platform_stats() {
+    match {
+        $a: Account
+    }
+    match {
+        $e: AccountEvent
+    }
+    match {
+        $a -[:HAS_EVENT]-> $e
+    }
+    return {
+        count($a) as accounts,
+        count($e) as events,
+        count($a -> $e) as relationships
+    }
+}
