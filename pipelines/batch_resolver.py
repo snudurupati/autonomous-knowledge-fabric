@@ -51,15 +51,12 @@ class BatchResolver:
             # In our sink, we use node_key = company_name. 
             # For fragment branches, we'll try to extract the name from the branch context.
             try:
-                # We need to know which account this branch is about.
-                # In a more advanced version, we'd query the branch for its 'root' node.
-                # For now, we'll use the search.gq pattern to find the candidate name.
-                
-                # Fetch any account node from this branch
+                # Fetch any account node from this branch using a simple query
+                # to avoid BM25 index issues on newly created side-branches.
                 resp = self.router.sink.client._execute(
                     "read", 
-                    "search.gq", 
-                    {"query": ""}, # Match all
+                    "get_high_risk_accounts.gq", 
+                    {"min_score": 0}, 
                     branch=branch_id
                 )
                 rows = resp.get("rows", [])
@@ -67,7 +64,7 @@ class BatchResolver:
                     logger.warning(f"Branch {branch_id} is empty. Deleting.")
                     requests.delete(f"{self.server_url}/branches/{branch_id}")
                     continue
-                
+
                 # Get the first account found in the branch
                 company_name = rows[0].get("a.name")
                 node_key = rows[0].get("a.node_key")
