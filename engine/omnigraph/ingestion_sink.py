@@ -18,12 +18,13 @@ logger = logging.getLogger(__name__)
 
 class OmnigraphSink:
     """
-    Omnigraph Ingestion Sink (Sprint 17/18)
+    Omnigraph Ingestion Sink (Sprint 17/18) - V2 with OTel Telemetry
     
     Manages ingestion of AccountEvents into Omnigraph.
     Uses OmnigraphClient for Schema-as-Code compliant mutations.
     
     v0.4.2: Implements batch buffering to minimize S3 commit penalties (~3.3s -> ~53ms/event).
+    v0.4.4: Added OpenTelemetry instrumentation for flushes and individual events.
     """
     def __init__(self, 
                  server_url: Optional[str] = None, 
@@ -40,7 +41,7 @@ class OmnigraphSink:
         # Batching configuration
         self.batch_size = batch_size
         self.flush_interval_secs = flush_interval_secs
-        self.buffer: List[tuple] = [] # Stores (event, target_branch)
+        self.buffer: List[AccountEvent] = []
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         
@@ -50,49 +51,31 @@ class OmnigraphSink:
         if self.use_buffering:
             self._flush_thread = threading.Thread(target=self._background_flush, daemon=True)
             self._flush_thread.start()
-            logger.info(f"Initialized Buffered OmnigraphSink. BatchSize: {self.batch_size}, Interval: {self.flush_interval_secs}s")
+            logger.info(f"Initialized Buffered OmnigraphSink V2. BatchSize: {self.batch_size}, Interval: {self.flush_interval_secs}s")
         else:
-            logger.info(f"Initialized Immediate OmnigraphSink. Server: {self.server_url}, Main Branch: {self.main_branch}")
+            logger.info(f"Initialized Immediate OmnigraphSink V2. Server: {self.server_url}, Main Branch: {self.main_branch}")
 
     def ingest_unverified_entity(self, event: AccountEvent) -> str:
         """
-        Maps an AccountEvent to an Account node upsert into a unique side-branch.
+        Maps an AccountEvent to an Account node upsert.
+        Calculates risk score and uses Omnigraph's @key for deterministic merging.
+        Returns the branch ID where the ingestion occurred.
         """
-        target_branch = f"fragment-{uuid.uuid4().hex[:8]}"
-        try:
-            requests.post(f"{self.server_url}/branches", json={
-                "name": target_branch,
-                "base": self.main_branch
-            }).raise_for_status()
-        except Exception as e:
-            logger.error(f"Failed to create branch {target_branch}: {e}")
-            # Fallback to main if branch creation fails
-            target_branch = self.main_branch
-
-        if self.use_buffering:
-            with self._lock:
-                self.buffer.append((event, target_branch))
-                buffer_len = len(self.buffer)
-            
-            if buffer_len >= self.batch_size:
-                self.flush()
-            return target_branch
-            
-        return self._commit_now(event, branch=target_branch)
+        return self.ingest_event(event)
 
     def ingest_event(self, event: AccountEvent) -> str:
         """
-        Ingests an event into Omnigraph's main branch. 
+        Ingests an event into Omnigraph. 
         If buffering is enabled, adds to buffer. Otherwise, commits immediately.
         """
         if self.use_buffering:
             with self._lock:
-                self.buffer.append((event, self.main_branch))
+                self.buffer.append(event)
                 buffer_len = len(self.buffer)
             
             if buffer_len >= self.batch_size:
                 self.flush()
-            return self.main_branch
+            return self.main_branch # Buffered events always target main branch in this implementation
         
         return self._commit_now(event)
 
@@ -152,9 +135,9 @@ class OmnigraphSink:
             span.set_attribute("batch_size", len(batch_to_flush))
             
             success_count = 0
-            for event, target_branch in batch_to_flush:
+            for event in batch_to_flush:
                 try:
-                    self._commit_now(event, branch=target_branch)
+                    self._commit_now(event)
                     success_count += 1
                 except Exception as e:
                     logger.error(f"Batch item failed: {e}")
@@ -212,7 +195,7 @@ class OmnigraphSink:
 if __name__ == "__main__":
     from models.account_event import EventSource, RiskSignal
     # Test simulation
-    sink = OmnigraphSink(use_buffering=False) # Writing to main for verification
+    sink = OmnigraphSink(use_buffering=False)
     
     test_evt = AccountEvent(
         source=EventSource.SEC_EDGAR,
@@ -222,8 +205,4 @@ if __name__ == "__main__":
     )
     
     print("\n--- Phase 1: Ingesting Initial Event ---")
-    sink.ingest_event(test_evt)
-    
-    print("\n--- Phase 2: Updating with Higher Risk ---")
-    test_evt.risk_signals.append(RiskSignal.TAKEOVER_BID)
     sink.ingest_event(test_evt)
