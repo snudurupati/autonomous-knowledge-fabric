@@ -41,7 +41,7 @@ class OmnigraphSink:
         # Batching configuration
         self.batch_size = batch_size
         self.flush_interval_secs = flush_interval_secs
-        self.buffer: List[AccountEvent] = []
+        self.buffer: List[tuple] = [] # Stores (event, target_branch)
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         
@@ -57,29 +57,45 @@ class OmnigraphSink:
 
     def ingest_unverified_entity(self, event: AccountEvent) -> str:
         """
-        Maps an AccountEvent to an Account node upsert.
-        Calculates risk score and uses Omnigraph's @key for deterministic merging.
-        Returns the branch ID where the ingestion occurred.
+        Maps an AccountEvent to an Account node upsert into a unique side-branch.
         """
-        return self.ingest_event(event)
+        target_branch = f"fragment-{uuid.uuid4().hex[:8]}"
+        try:
+            requests.post(f"{self.server_url}/branches", json={
+                "name": target_branch,
+                "base": self.main_branch
+            }).raise_for_status()
+        except Exception as e:
+            logger.error(f"Failed to create branch {target_branch}: {e}")
+            target_branch = self.main_branch
 
-    def ingest_event(self, event: AccountEvent) -> str:
-        """
-        Ingests an event into Omnigraph. 
-        If buffering is enabled, adds to buffer. Otherwise, commits immediately.
-        """
         if self.use_buffering:
             with self._lock:
-                self.buffer.append(event)
+                self.buffer.append((event, target_branch))
                 buffer_len = len(self.buffer)
             
             if buffer_len >= self.batch_size:
                 self.flush()
-            return self.main_branch # Buffered events always target main branch in this implementation
+            return target_branch
+            
+        return self._commit_now(event, branch=target_branch)
+
+    def ingest_event(self, event: AccountEvent) -> str:
+        """
+        Ingests an event into Omnigraph's main branch. 
+        """
+        if self.use_buffering:
+            with self._lock:
+                self.buffer.append((event, self.main_branch))
+                buffer_len = len(self.buffer)
+            
+            if buffer_len >= self.batch_size:
+                self.flush()
+            return self.main_branch 
         
         return self._commit_now(event)
 
-    def _commit_now(self, event: AccountEvent, branch: Optional[str] = None) -> str:
+    def _commit_now(self, event: AccountEvent, branch: Optional[str] = None, sync_branch: bool = True) -> str:
         """Immediate commit of a single event."""
         start_time = time.monotonic()
         target_branch = branch or self.main_branch
@@ -94,6 +110,7 @@ class OmnigraphSink:
             span.set_attribute("event_id", event.event_id)
             span.set_attribute("company", event.company_name)
             span.set_attribute("branch", target_branch)
+            span.set_attribute("sync_branch", sync_branch)
             
             try:
                 self.client.ingest_event_complete(
@@ -105,10 +122,11 @@ class OmnigraphSink:
                     timestamp=event.timestamp.date().isoformat(),
                     risk_signals=[s.value for s in event.risk_signals],
                     raw_text=event.raw_text,
-                    branch=target_branch
+                    branch=target_branch,
+                    sync_branch=sync_branch
                 )
                 latency_ms = (time.monotonic() - start_time) * 1000
-                logger.info(f"INGEST_SUCCESS entity='{event.company_name}' latency_ms={latency_ms:.1f}")
+                logger.info(f"INGEST_SUCCESS entity='{event.company_name}' sync={sync_branch} latency_ms={latency_ms:.1f}")
                 
                 # Mark graph as written for latency tracking
                 latency_tracker.record_graph_written(event.event_id)
@@ -134,13 +152,23 @@ class OmnigraphSink:
         with tracer.start_as_current_span("pipeline.batch_flush") as span:
             span.set_attribute("batch_size", len(batch_to_flush))
             
+            # Group events by branch to manage sync_branch efficiently
+            branch_groups = {}
+            for event, target_branch in batch_to_flush:
+                if target_branch not in branch_groups:
+                    branch_groups[target_branch] = []
+                branch_groups[target_branch].append(event)
+            
             success_count = 0
-            for event in batch_to_flush:
-                try:
-                    self._commit_now(event)
-                    success_count += 1
-                except Exception as e:
-                    logger.error(f"Batch item failed: {e}")
+            for target_branch, events in branch_groups.items():
+                for idx, event in enumerate(events):
+                    # Only force branch sync on the final event of the batch for this branch
+                    should_sync = (idx == len(events) - 1)
+                    try:
+                        self._commit_now(event, branch=target_branch, sync_branch=should_sync)
+                        success_count += 1
+                    except Exception as e:
+                        logger.error(f"Batch item failed: {e}")
             
             latency_ms = (time.monotonic() - start_time) * 1000
             logger.info(f"BATCH_FLUSH_COMPLETE success={success_count}/{len(batch_to_flush)} latency_ms={latency_ms:.1f} avg_ms={latency_ms/max(1, success_count):.1f}")
