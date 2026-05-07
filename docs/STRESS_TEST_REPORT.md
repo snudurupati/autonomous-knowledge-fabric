@@ -63,11 +63,15 @@ Events lacking strong identifiers ("Weak Signals") were isolated into unique Omn
 *   **The Batch Resolver:** A decoupled script (`pipelines/batch_resolver.py`) was built to process these fragments asynchronously using a Gemini 2.5 Flash LLM.
 *   **Rate Limit Bottleneck:** The resolver initially failed because it exceeded the Gemini Free Tier limit of 15 Requests Per Minute (RPM). It triggered `429 RESOURCE_EXHAUSTED` exceptions from the `instructor` library.
 *   **Mitigation:** We implemented a robust backoff strategy:
-    1. A base throttle of `time.sleep(5)` ensures a maximum of 12 RPM.
-    2. Proper exception propagation allows the outer loop to catch `429` errors and initiate a `time.sleep(60)` cooldown before retrying.
+    1. A base throttle of `time.sleep(6.0)` ensures a maximum of 10 RPM.
+    2. Proper exception propagation allows the outer loop to catch `429` errors and initiate a `time.sleep(60)` cooldown.
+*   **Daily Quota Discovery:** During the final phase of the stress test, we identified a hard daily quota of **20 requests per day** for the `gemini-2.5-flash` model on the free tier. 
+*   **Successful Resolution:** Despite the quota limit, the resolver successfully merged several high-confidence fragments (e.g., matching partial "Microsoft" fragments to the canonical "Microsoft Corporation") before hitting the daily limit.
+*   **Future Strategy:** For Sprint 22, the resolver will be refactored to use **Batch Prompting** (sending 20+ fragments in a single LLM call) to resolve the remaining 180+ side-branches within the daily 20-call limit.
 
 ## 5. Conclusion
 The 8-hour stress test proved that the pathway-to-omnigraph architecture is highly viable for real-time intel generation, provided the following rules are strictly observed:
 1. **Never sync on every write:** S3-native graphs *must* use batched ingestion.
 2. **Never poll the head for UI/RAG:** Always pin your session to a snapshot ID for reads.
 3. **Decouple LLM Evaluation:** Asynchronous batch resolution on side-branches protects the ingestion pipeline from third-party API rate limits and latency.
+4. **Respect Daily Quotas:** When working with low-quota free-tier models, batching multiple entities into a single LLM context is mandatory for scale.

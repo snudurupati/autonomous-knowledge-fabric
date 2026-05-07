@@ -1,119 +1,94 @@
-# pipelines/batch_resolver.py
-# Periodic resolver that scans Omnigraph side-branches and uses Tier-3 LLM Judge
-# to merge them into the main knowledge fabric.
-
+import sys
+import os
 import time
 import requests
-import logging
-import os
+from engine.omnigraph.client import OmnigraphClient
 from pipelines.routing import get_routing_manager
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+def run_batch_resolver():
+    server_url = os.getenv("OMNIGRAPH_SERVER_URL", "http://127.0.0.1:8080")
+    client = OmnigraphClient(server_url)
+    router = get_routing_manager()
+    
+    # 1. Get all branches
+    try:
+        resp = requests.get(f"{server_url}/branches")
+        resp.raise_for_status()
+        branches = resp.json().get("branches", [])
+    except Exception as e:
+        print(f"Failed to fetch branches: {e}")
+        return
 
-class BatchResolver:
-    def __init__(self, server_url: str = "http://127.0.0.1:8080"):
-        self.server_url = server_url
-        self.router = get_routing_manager()
+    fragments = [b for b in branches if b.startswith("fragment-") or b.startswith("weak-")]
+    print(f"Found {len(fragments)} side-branches to evaluate.")
 
-    def get_all_branches(self):
-        """Fetch all branch names from Omnigraph."""
-        try:
-            resp = requests.get(f"{self.server_url}/branches")
-            resp.raise_for_status()
-            return resp.json().get("branches", [])
-        except Exception as e:
-            logger.error(f"Failed to fetch branches: {e}")
-            return []
-
-    def resolve_all(self):
-        """Iterate through fragment branches and attempt resolution."""
-        branches = self.get_all_branches()
-        # Filter for fragment branches (exclude 'main')
-        fragments = [b for b in branches if b.startswith("fragment-") or b.startswith("weak-")]
-        
-        if not fragments:
-            logger.info("No fragment branches found for resolution.")
-            return
-
-        logger.info(f"🔍 Found {len(fragments)} branches awaiting resolution.")
-        
-        resolved_count = 0
-        for branch_id in fragments:
-            logger.info(f"--- Resolving branch: {branch_id} ---")
-            
-            # 1. Identify the 'primary' company name in this branch
-            # We use a simple heuristic: the branch name or a quick read
-            # In our sink, we use node_key = company_name. 
-            # For fragment branches, we'll try to extract the name from the branch context.
+    for branch_id in fragments:
+        print(f"\n--- Evaluating Branch: {branch_id} ---")
+        max_attempts = 3
+        attempt = 0
+        while attempt < max_attempts:
             try:
-                # Fetch any account node from this branch using a simple query
-                # to avoid BM25 index issues on newly created side-branches.
-                resp = self.router.sink.client._execute(
-                    "read", 
-                    "get_high_risk_accounts.gq", 
-                    {"min_score": 0}, 
-                    branch=branch_id
-                )
-                rows = resp.get("rows", [])
-                if not rows:
-                    logger.warning(f"Branch {branch_id} is empty. Deleting.")
-                    requests.delete(f"{self.server_url}/branches/{branch_id}")
-                    continue
-
-                # Get the first account found in the branch
-                company_name = rows[0].get("a.name")
-                node_key = rows[0].get("a.node_key")
+                # Get the account name and node_key from this branch
+                try:
+                    res = client._execute("read", "list_accounts.gq", {}, branch=branch_id)
+                except Exception as e:
+                    print(f"⚠️ Skipping branch {branch_id} due to read error: {e}")
+                    break
+                    
+                accounts = res.get("rows", [])
                 
-                logger.info(f"Branch '{branch_id}' appears to be about '{company_name}'")
+                if not accounts:
+                    print(f"No accounts found in branch {branch_id}. Skipping.")
+                    break
                 
-                # 2. Invoke the Tier-3 LLM Judge
-                success = self.router.evaluate_and_resolve(
-                    branch_id=branch_id,
-                    node_key=node_key,
-                    company_name=company_name
-                )
+                resolved_all = True
+                for acc in accounts:
+                    node_key = acc.get("a.node_key") or acc.get("node_key")
+                    company_name = acc.get("a.name") or acc.get("name")
+                    
+                    if not node_key or not company_name:
+                        continue
+                    
+                    print(f"Evaluating entity: '{company_name}' (key: {node_key}) [Attempt {attempt + 1}]")
+                    
+                    try:
+                        success = router.evaluate_and_resolve(
+                            branch_id=branch_id,
+                            node_key=node_key,
+                            company_name=company_name
+                        )
+                        
+                        if success:
+                            print(f"✅ SUCCESSFULLY MERGED {branch_id} for '{company_name}'")
+                        else:
+                            print(f"ℹ️ RESOLVER: No confident match found for '{company_name}' on main.")
+                        
+                        print("Sleeping 6s to maintain ~10 RPM...")
+                        time.sleep(6)
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        if "429" in error_msg or "resource_exhausted" in error_msg or "too many requests" in error_msg:
+                            print(f"🚨 RATE LIMIT EXHAUSTED (429) after internal retries: {e}")
+                            print("Backing off for 60 seconds before retrying THIS branch...")
+                            time.sleep(60)
+                            resolved_all = False
+                            break # Break inner loop to retry the whole branch
+                        else:
+                            print(f"❌ Error during resolution for {branch_id}: {e}")
+                            continue
                 
-                if success:
-                    resolved_count += 1
-                    logger.info(f"✅ Resolved and merged branch {branch_id}")
+                if resolved_all:
+                    break # Success or non-retryable skip, move to next branch
                 else:
-                    logger.info(f"⏳ Branch {branch_id} remains open (no match or rejected)")
+                    attempt += 1 # Retryable 429 hit, increment attempt counter
                     
             except Exception as e:
-                logger.error(f"Error resolving branch {branch_id}: {e}")
-                logger.warning("Potential API Rate Limit hit. Sleeping for 60 seconds before retrying next branch...")
-                time.sleep(60)
-                continue # Skip the standard sleep and move to the next branch
-                
-            # Throttle to respect Gemini Free Tier rate limit (15 RPM)
-            # 5 seconds ensures a maximum of 12 requests per minute.
-            logger.info("Sleeping for 5s to respect API rate limits...")
-            time.sleep(5)
-
-        logger.info(f"🏁 Batch resolution complete. Resolved {resolved_count}/{len(fragments)} branches.")
-
-def run_loop(interval_hours: float = 1.0):
-    """Continuous loop for periodic resolution."""
-    resolver = BatchResolver()
-    logger.info(f"🚀 Batch Resolver started. Running every {interval_hours} hours.")
-    
-    while True:
-        resolver.resolve_all()
-        logger.info(f"Sleeping for {interval_hours} hours...")
-        time.sleep(interval_hours * 3600)
+                print(f"Error processing branch {branch_id}: {e}")
+                break
 
 if __name__ == "__main__":
-    import sys
-    # Take optional interval from command line
-    interval = float(sys.argv[1]) if len(sys.argv) > 1 else 1.0
+    if not os.getenv("GEMINI_API_KEY"):
+        print("Error: GEMINI_API_KEY environment variable is not set.")
+        sys.exit(1)
     
-    # If interval is 0, run once and exit (for manual trigger)
-    if interval == 0:
-        BatchResolver().resolve_all()
-    else:
-        run_loop(interval)
+    run_batch_resolver()
