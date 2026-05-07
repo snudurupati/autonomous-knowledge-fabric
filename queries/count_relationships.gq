@@ -1,0 +1,8 @@
+query count_relationships() {
+    match { 
+        $a: Account
+        $a has_event $e
+        $e: AccountEvent
+    }
+    return { count($e) as c }
+}

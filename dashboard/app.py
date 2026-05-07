@@ -6,7 +6,7 @@ from pathlib import Path
 # Add project root to sys.path to allow imports from graph, models, etc.
 root_path = str(Path(__file__).resolve().parent.parent)
 if root_path not in sys.path:
-    sys.path.append(root_path)
+    sys.path.insert(0, root_path)
 
 from graph.omnigraph_client import OmnigraphClientWrapper
 from datetime import datetime, timezone
@@ -18,7 +18,10 @@ st.subheader("Real-time Account Risk Intelligence")
 
 @st.cache_resource
 def get_client():
-    return OmnigraphClientWrapper()
+    wrapper = OmnigraphClientWrapper()
+    # Fetch the latest snapshot to pin the session
+    wrapper.snapshot_id = wrapper.get_latest_snapshot()
+    return wrapper
 
 client = get_client()
 
@@ -27,12 +30,60 @@ st.sidebar.header("Controls")
 if st.sidebar.button("Refresh Data"):
     st.cache_data.clear()
 
+if st.sidebar.button("Sync to Head"):
+    latest = client.get_latest_snapshot()
+    if latest != client.snapshot_id:
+        client.snapshot_id = latest
+        st.sidebar.success(f"Synced to {latest[:8]}...")
+        st.cache_data.clear() # Force refresh of any cached queries
+    else:
+        st.sidebar.info("Already at head.")
+
+if client.snapshot_id:
+    st.sidebar.caption(f"Pinned Snapshot: {client.snapshot_id[:12]}")
+else:
+    st.sidebar.warning("Reading from Branch Head (Slow Path)")
+
+# Platform Overview Scorecards
+stats = client.get_platform_stats()
+s1, s2, s3, s4 = st.columns(4)
+with s1:
+    st.metric("Total Accounts", stats['accounts'])
+with s2:
+    st.metric("Total Events", stats['events'])
+with s3:
+    st.metric("Graph Connections", stats['relationships'])
+with s4:
+    # Calculate density or just show a status
+    st.metric("Graph Status", "HEALTHY", delta="v0.4.1 (Lance)")
+
+st.divider()
+
 # Main Dashboard
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.write("### High Risk Accounts")
-    high_risk = client.get_high_risk_accounts()
+    st.write("### 🔥 Top 5 High Risk Accounts")
+    # Fetch top accounts (ordered by score desc)
+    all_accounts = client.get_high_risk_accounts(min_score=0)
+    top_5 = all_accounts[:5]
+    
+    if not top_5:
+        st.info("No accounts detected yet.")
+    else:
+        m_cols = st.columns(len(top_5))
+        for i, acc in enumerate(top_5):
+            with m_cols[i]:
+                st.metric(
+                    label=acc['company'],
+                    value=f"{acc['score']}",
+                    delta=acc['level'],
+                    delta_color="off" # Level isn't a "change"
+                )
+    
+    st.divider()
+    st.write("### 📊 All High Risk Accounts (Score ≥ 70)")
+    high_risk = [a for a in all_accounts if a['score'] >= 70]
     
     if not high_risk:
         st.info("No high risk accounts detected yet.")
@@ -72,8 +123,8 @@ with col2:
                         st.write(f"**Signals:** {', '.join(ctx['risk_signals']) or 'None'}")
                         st.write(f"**Last Updated:** {ctx['last_updated']}")
                         st.write("**Recent Events:**")
-                        for event in ctx['recent_events']:
-                            st.text_area("Event Detail", event, height=100, disabled=True)
+                        for i, event in enumerate(ctx['recent_events']):
+                            st.text_area("Event Detail", event, height=100, disabled=True, key=f"evt_{res['company_name']}_{i}")
 
 # Footer/Status
 st.divider()

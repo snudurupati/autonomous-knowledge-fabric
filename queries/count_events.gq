@@ -1,0 +1,4 @@
+query count_events() {
+    match { $e: AccountEvent }
+    return { count($e) as c }
+}

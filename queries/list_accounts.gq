@@ -1,4 +1,4 @@
-query complex_search($query: String) {
+query list_accounts() {
     match {
         $a: Account
     }
@@ -7,8 +7,4 @@ query complex_search($query: String) {
         $a.name,
         $a.risk_score
     }
-    order {
-        bm25($a.name, $query)
-    }
-    limit 5
 }

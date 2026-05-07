@@ -1,0 +1,4 @@
+query count_accounts() {
+    match { $a: Account }
+    return { count($a) as c }
+}

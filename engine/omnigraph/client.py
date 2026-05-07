@@ -13,7 +13,7 @@ class OmnigraphClient:
         with open(path, "r") as f:
             return f.read()
 
-    def _execute(self, endpoint, query_filename, params=None, branch="main", snapshot_id=None):
+    def _execute(self, endpoint, query_filename, params=None, branch="main", snapshot_id=None, sync_branch=True):
         """
         Executes a query from a file against the Omnigraph server.
         Supports snapshot-pinned reads via the snapshot_id parameter in the payload.
@@ -26,21 +26,21 @@ class OmnigraphClient:
             "params": params or {}
         }
         
-        # Always provide the branch. If snapshot_id is provided, add it to pin the read
-        # and achieve sub-ms latency in Omnigraph 0.4.1.
-        if branch:
-            payload["branch"] = branch
+        # If snapshot_id is provided, use it to pin the read for sub-ms latency.
+        # Otherwise, fall back to branch-based reading. 
+        # Note: The server rejects requests that contain both branch and snapshot.
         if snapshot_id:
             payload["snapshot"] = snapshot_id
+        elif branch:
+            payload["branch"] = branch
         
         max_retries = 3
         retry_delay = 0.5
         
-        # Only force branch synchronization for writes or branch-based reads.
-        # Pinned snapshot reads should skip this to achieve sub-100ms latency.
         url = f"{self.base_url}/{endpoint}"
-        if endpoint == "change" or not snapshot_id:
+        if sync_branch and not snapshot_id:
             url += "?sync_branch=true"
+
         
         for attempt in range(max_retries + 1):
             response = requests.post(url, json=payload)
@@ -60,7 +60,7 @@ class OmnigraphClient:
                 response=response
             )
 
-    def insert_account(self, name, node_key, risk_score, branch="main"):
+    def insert_account(self, name, node_key, risk_score, branch="main", sync_branch=True):
         """
         Inserts an Account node.
         """
@@ -69,9 +69,9 @@ class OmnigraphClient:
             "node_key": node_key,
             "risk_score": risk_score
         }
-        return self._execute("change", "insert_account.gq", params, branch=branch)
+        return self._execute("change", "insert_account.gq", params, branch=branch, sync_branch=sync_branch)
 
-    def insert_event(self, event_id, source, timestamp, risk_signals=None, raw_text=None, branch="main"):
+    def insert_event(self, event_id, source, timestamp, risk_signals=None, raw_text=None, branch="main", sync_branch=True):
         """
         Inserts an AccountEvent node.
         """
@@ -82,9 +82,9 @@ class OmnigraphClient:
             "risk_signals": risk_signals or [],
             "raw_text": raw_text or ""
         }
-        return self._execute("change", "insert_event.gq", params, branch=branch)
+        return self._execute("change", "insert_event.gq", params, branch=branch, sync_branch=sync_branch)
 
-    def link_account_event(self, account_key, event_id, branch="main"):
+    def link_account_event(self, account_key, event_id, branch="main", sync_branch=True):
         """
         Links an Account to an AccountEvent via HAS_EVENT edge.
         """
@@ -92,9 +92,9 @@ class OmnigraphClient:
             "account": account_key,
             "event": event_id
         }
-        return self._execute("change", "link_account_event.gq", params, branch=branch)
+        return self._execute("change", "link_account_event.gq", params, branch=branch, sync_branch=sync_branch)
 
-    def ingest_event_complete(self, name, node_key, risk_score, event_id, source, timestamp, risk_signals=None, raw_text=None, branch="main"):
+    def ingest_event_complete(self, name, node_key, risk_score, event_id, source, timestamp, risk_signals=None, raw_text=None, branch="main", sync_branch=True):
         """
         Ingests an account, an event, and the link between them in a single transactional request.
         """
@@ -108,7 +108,7 @@ class OmnigraphClient:
             "risk_signals": risk_signals or [],
             "raw_text": raw_text or ""
         }
-        return self._execute("change", "ingest_event_complete.gq", params, branch=branch)
+        return self._execute("change", "ingest_event_complete.gq", params, branch=branch, sync_branch=sync_branch)
 
     def get_account(self, node_key, branch="main", snapshot_id=None):
         """

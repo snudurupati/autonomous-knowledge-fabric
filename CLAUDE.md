@@ -10,7 +10,24 @@ Reference architecture for real-time Account Intelligence using Pathway (stream 
 * **CONFIGURATION DRIVEN:** The project relies on an `omnigraph.yaml` file at the root. Do not hardcode endpoint URLs in Python files.
 * **LINKED QUERIES ONLY:** All database operations (`insert`, `search`, `merge`) must be written in dedicated `.gq` files located in the `queries/` directory. 
 * **CUSTOM HTTP WRAPPER:** There is no official Python SDK. Use `requests` to build a custom client in `engine/omnigraph/client.py`. 
-* **PAYLOAD SCHEMA:** All requests to `/read` or `/change` must send a JSON payload with `query_source` (the raw `.gq` string), `branch` (string), and `params` (dict). Read `.gq` files from disk to populate `query_source`.:w
+* **PAYLOAD SCHEMA:** All requests to `/read` or `/change` must send a JSON payload with `query_source` (the raw `.gq` string) and either `branch` OR `snapshot` (but not both). Read `.gq` files from disk to populate `query_source`.
+
+## Omnigraph S3-Native Storage & Latency Mechanisms
+Omnigraph operates on an immutable, append-only S3-native architecture built on top of Lance format.
+
+### 1. Pinned Snapshot Reads (The Fast Path: < 1ms)
+* **When to use:** For Agent Context / RAG retrieval / Dashboard.
+* **Mechanism:** Bypasses S3 metadata network checks by targeting a specific, immutable Manifest version.
+* **API Requirement:** Provide the `snapshot` parameter in the payload. Omit the `branch` parameter to avoid server conflicts.
+
+### 2. Branch Head Reads (The Slow Path: ~840ms)
+* **When to use:** When you specifically need the absolute latest state and cannot tolerate a slightly stale pinned snapshot.
+* **Mechanism:** Targets the "Latest Version" (head), requiring a synchronous network call to S3 (e.g., `S3 Head`) to verify Manifest freshness.
+
+### 3. Write Path / S3 Commit Penalty
+* **Mechanism:** Every commit generates new Manifests and data fragments in S3.
+* **Performance:** Single-row mutations incur a ~3.3s commit penalty.
+* **Optimization:** Use **batch ingestions** (targeted efficiency: ~53ms/event) or transactional GQL blocks (`ingest_event_complete.gq`) to minimize commit volume.
 
 ## Omnigraph Branching Conventions (Sprint 17+)
 * **Headless Branches:** Every unverified entity fragment MUST be ingested into a unique side-branch (e.g., `fragment/<uuid>`).
@@ -19,8 +36,8 @@ Reference architecture for real-time Account Intelligence using Pathway (stream 
 
 ## Environment Conventions
 * **Virtual Env:** Always use `.venv-omnigraph/bin/python` (Python 3.12).
-* **Pip Freeze:** Use `.venv-omnigraph/bin/python -m pip freeze > requirements.txt` (never use `python3.12 -m pip freeze` as it targets the system).
-* **Running Scripts:** Always run scripts as modules from project root: `python -m pipelines.script_name`
+* **Pip Freeze:** Use `./.venv-omnigraph/bin/python3 -m pip freeze > requirements.txt`.
+* **Running Scripts:** Always run scripts as modules or with absolute venv path from project root: `PYTHONPATH=. ./.venv-omnigraph/bin/python3 path/to/script.py`
 
 ## SEC 8-K Item Codes → Risk Signals
 * Item 1.01 = Material Definitive Agreement

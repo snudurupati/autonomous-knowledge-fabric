@@ -1,0 +1,67 @@
+import os
+    2 import time
+    3 import logging
+    4 from models.account_event import AccountEvent, EventSource, RiskSignal
+    5 from pipelines.routing import OmnigraphRoutingManager
+    6 from engine.omnigraph.ingestion_sink import OmnigraphSink
+    7
+    8 # Enable logging to see the Fast-Path and Branching decisions
+    9 logging.basicConfig(level=logging.INFO)
+   10
+   11 def run_test():
+   12     # Ensure the Google API key is set for Gemini
+   13     if not os.getenv("GEMINI_API_KEY"):
+   14         print("❌ Please set your GEMINI_API_KEY environment variable.")
+   15         return
+   16
+   17     sink = OmnigraphSink(use_buffering=True)
+   18     router = OmnigraphRoutingManager(sink=sink)
+   19
+   20     print("\n--- Phase 1: Ingest 'Main' Candidate (Strong Signal) ---")
+   21     # This event has a CIK number, so it triggers the FAST-PATH and goes straight to 'main'
+   22     main_event = AccountEvent(
+   23         source=EventSource.SEC_EDGAR,
+   24         company_name="Apple Inc.",
+   25         cik_number="0000320193", # Strong signal
+   26         risk_signals=[RiskSignal.EXECUTIVE_DEPARTURE],
+   27         raw_text="Apple Inc. (CIK: 0000320193) announced the departure of a key executive today."
+   28     )
+   29     router.process_event(main_event)
+   30     
+   31     # Wait a moment for the commit to settle
+   32     time.sleep(1)
+   33
+   34     print("\n--- Phase 2: Ingest 'Fragment' (Weak Signal) ---")
+   35     # This event only has a name, so it gets buffered into a side-branch
+   36     fragment_event = AccountEvent(
+   37         source=EventSource.ZENDESK,
+   38         company_name="Apple", # Weak signal, missing identifiers
+   39         risk_signals=[RiskSignal.CRITICAL_SUPPORT],
+   40         raw_text="Customer reported a critical kernel panic on the latest macOS beta."
+   41     )
+   42     
+   43     # process_event returns False when branched. We need the branch ID from the sink.
+   44     # To capture the branch ID cleanly for the test, we'll bypass the router for the fragment insertion
+   45     branch_id = sink.ingest_unverified_entity(fragment_event)
+   46     print(f"Created Fragment Branch: {branch_id}")
+   47     
+   48     time.sleep(1)
+   49
+   50     print("\n--- Phase 3: Execute Tier-3 LLM Judge ---")
+   51     print(f"Asking Gemini 2.5 Flash to compare branch '{branch_id}' against 'main'...")
+   52     
+   53     # The node_key for the fragment will be its normalized name
+   54     node_key = fragment_event.company_name
+   55     
+   56     # Run the judge
+   57     success = router.evaluate_and_resolve(
+   58         branch_id=branch_id, 
+   59         node_key=node_key, 
+   60         company_name="Apple" # The search query for candidates
+   61     )
+   62
+   63     print(f"\nResult: {'✅ MERGED' if success else '❌ REJECTED'}")
+   64
+   65 if __name__ == "__main__":
+   66     run_test()
+
