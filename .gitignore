@@ -11,3 +11,4 @@ __pycache__/
 .venv-omnigraph/
 akf_resolver_cache.db
 skills-lock.json
+backups/

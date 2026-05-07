@@ -1,0 +1,8 @@
+query clear_has_event() {
+    match {
+        $a: Account
+        $a has_event $e
+        $e: AccountEvent
+    }
+    delete $a has_event $e
+}
