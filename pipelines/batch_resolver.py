@@ -86,6 +86,10 @@ class BatchResolver:
                     
             except Exception as e:
                 logger.error(f"Error resolving branch {branch_id}: {e}")
+                
+            # Throttle to respect Gemini Free Tier rate limit (15 RPM)
+            logger.info("Sleeping for 4.5s to respect API rate limits...")
+            time.sleep(4.5)
 
         logger.info(f"🏁 Batch resolution complete. Resolved {resolved_count}/{len(fragments)} branches.")
 
