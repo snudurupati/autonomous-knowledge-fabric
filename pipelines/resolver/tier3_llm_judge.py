@@ -78,7 +78,7 @@ class LLMJudgeResolver:
         """
         self.client = client
         self.api_key = api_key or os.environ.get("GOOGLE_API_KEY")
-        self.model_name = "gemini-1.5-flash"
+        self.model_name = "gemini-2.5-flash"
         self.merge_threshold = 0.70
         self.cache = LLMRehydrationCache()
         

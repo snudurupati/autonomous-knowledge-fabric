@@ -1,0 +1,10 @@
+query list_accounts() {
+    match {
+        $a: Account
+    }
+    return {
+        $a.node_key,
+        $a.name,
+        $a.risk_score
+    }
+}
