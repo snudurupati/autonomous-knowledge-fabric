@@ -60,10 +60,11 @@ def run_batch_resolver():
                         
                         if success:
                             print(f"✅ SUCCESSFULLY MERGED {branch_id} for '{company_name}'")
-                            print("Sleeping 5s after success...")
-                            time.sleep(5)
                         else:
                             print(f"ℹ️ RESOLVER: No confident match found for '{company_name}' on main.")
+                        
+                        print("Sleeping 6s to maintain ~10 RPM...")
+                        time.sleep(6)
                     except Exception as e:
                         error_msg = str(e).lower()
                         if "429" in error_msg or "resource_exhausted" in error_msg or "too many requests" in error_msg:
