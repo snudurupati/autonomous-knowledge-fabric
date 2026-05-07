@@ -86,10 +86,14 @@ class BatchResolver:
                     
             except Exception as e:
                 logger.error(f"Error resolving branch {branch_id}: {e}")
+                logger.warning("Potential API Rate Limit hit. Sleeping for 60 seconds before retrying next branch...")
+                time.sleep(60)
+                continue # Skip the standard sleep and move to the next branch
                 
             # Throttle to respect Gemini Free Tier rate limit (15 RPM)
-            logger.info("Sleeping for 4.5s to respect API rate limits...")
-            time.sleep(4.5)
+            # 5 seconds ensures a maximum of 12 requests per minute.
+            logger.info("Sleeping for 5s to respect API rate limits...")
+            time.sleep(5)
 
         logger.info(f"🏁 Batch resolution complete. Resolved {resolved_count}/{len(fragments)} branches.")
 
