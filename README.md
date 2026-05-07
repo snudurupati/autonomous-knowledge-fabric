@@ -197,17 +197,22 @@ streamlit run dashboard/app.py
 
 ---
 
-## 📊 Performance Benchmarks (Sprint 20 Update - Omnigraph 0.4.1)
+## 📊 Performance Benchmarks (Sprint 22 Update - Omnigraph 0.4.1)
 
-| Metric | Omnigraph 0.3.1 (Local) | Omnigraph 0.4.1 (Local) | Memgraph (In-Memory) |
+| Metric | Tiny Graph (1 node) | Small Graph (7 nodes) | crm-fixed (116 nodes) |
 | :--- | :--- | :--- | :--- |
-| **P50 Upsert Latency** | ~70,000 ms | **~3,300 ms** | ~2.00 ms |
-| **P50 Batched (100 evts)**| ~304 ms/evt | **~53 ms/evt** | ~2.00 ms |
-| **P50 Context Read** | ~80 ms | **< 1 ms** | ~1.50 ms |
+| **P50 Pinned Read** | **~450 ms** | **~550 ms** | **~2,500 ms** |
+| **P50 Head Read** | ~1,800 ms | ~2,000 ms | ~3,800 ms |
+| **P50 Batched Load**| ~40 ms/evt | ~45 ms/evt | **~53 ms/evt** |
 
-### 🧠 Read Path RCA: The "Pinned Snapshot" Requirement (v0.4.1)
+### 🧠 Latency Complexity: The O(n) Reality
 
-In Omnigraph 0.4.1, achieving sub-millisecond read latency requires hitting an optimized execution path. We discovered that the server requires **both** the `branch` and `snapshot` fields to be present in the request payload to route the query through this fast path. Omitting the `branch` causes the server to fall back to a slower, unoptimized execution path (~840ms). Updating the client to pass both parameters restored pinned snapshot reads to **< 1ms**.
+Our authoritative investigation in Sprint 22 revealed that read latency in this local development environment scales **linearly with the number of nodes (O(n))**. 
+
+*   **Environmental Bottleneck**: The ~450ms "floor" is the fixed overhead of the server's query engine and communication with the local RustFS S3 emulator. 
+*   **Scaling Factor**: Beyond the floor, latency increases at roughly **~18ms per node**. 
+*   **The <1ms Claim**: Previous reports of sub-millisecond latency were likely measured on production-grade NVMe storage or with warmer memory caches. For local development using S3 emulation, expectations should be set at **~2.5s for a 100+ node graph**.
+*   **Pinning Benefit**: Snapshot pinning continues to provide a **~35% performance boost** by bypassing the S3 Head consistency checks, though it does not eliminate the underlying I/O scaling cost.
 
 ### 🧠 Write Path RCA: The "S3 Commit Penalty" (Optimized in 0.4.1)
 
