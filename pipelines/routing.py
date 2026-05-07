@@ -100,7 +100,7 @@ class OmnigraphRoutingManager:
             is_match = resp.is_match
         except Exception as e:
             logger.error(f"LLM evaluation failed for {company_name}: {e}")
-            return False
+            raise e  # Raise the exception so the caller can trigger rate-limit backoffs
 
         # 4. Execute
         if is_match:
