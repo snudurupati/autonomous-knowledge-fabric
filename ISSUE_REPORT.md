@@ -1,3 +1,30 @@
+# ISSUE REPORT: [ARCHITECTURAL] Lack of Atomic Transactions (Dangling Manifest Corruption)
+
+## Status
+**Open** | Priority: Critical | Type: Backend / Storage Architecture
+
+## Description
+Omnigraph's underlying storage mechanism (built on Lance) lacks true atomic transactions across manifest files and branch pointers. When the system is under load, or if a client process crashes mid-operation, the repository is frequently left in an unrecoverable, corrupted state.
+
+### Symptoms & Error Messages
+Operations like `branch merge` or `change` fail persistently with "stale view" or "expected manifest version" errors, even after restarting the server or eliminating all other concurrent writers.
+
+**Exact Error Message:**
+```json
+{"error":"stale view of 'edge:HAS_EVENT': expected manifest table version 239 but current is 240 — refresh and retry","code":"conflict","manifest_conflict":{"table_key":"edge:HAS_EVENT","expected":239,"actual":240}}
+```
+
+### Root Cause Analysis (RCA)
+1. **Non-Atomic Commits**: During a write operation (e.g., a merge), the server writes a new manifest file (e.g., `240.manifest`) to the storage layer.
+2. **The Race Condition / Crash**: Before the server can successfully update the branch's transaction pointer to reference this new manifest, the client process crashes, times out, or the S3 emulator drops the connection.
+3. **The Dangling Manifest**: The storage layer now physically contains version `240`, but the branch pointer remains at `239`.
+4. **Unrecoverable Deadlock**: Any subsequent attempt to write to the graph calculates the next expected version as `240`. The server attempts to write `240.manifest`, but the storage layer rejects it because the file already exists. The system is deadlocked and cannot move forward.
+
+## Workaround
+There is no programmatic API fix for this state. The only resolution is a destructive **Full Wipe & Reload** of the repository (documented below).
+
+---
+
 # ISSUE REPORT: [OPERATIONAL] Repository Metadata Corruption in Local RustFS (O(n) Scaling & Manifest 404s)
 
 ## Status
