@@ -45,9 +45,10 @@ def run_batch_resolver():
     print(f"Found {len(fragments)} side-branches to evaluate.")
 
     # 2. Collect metadata in parallel (S3 Head reads are slow)
+    # Reduced max_workers to 1 to avoid 'False 404' metadata errors in local RustFS
     print(f"Collecting metadata for {len(fragments)} fragments using parallel workers...")
     fragment_metadata = []
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         futures = [executor.submit(get_fragment_metadata, client, b) for b in fragments]
         for future in futures:
             result = future.result()
