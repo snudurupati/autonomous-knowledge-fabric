@@ -208,7 +208,11 @@ class OmnigraphSink:
                         "strategy": "fast-forward"
                     })
                     merge_resp.raise_for_status()
-                    logger.info(f"MERGE_SUCCESS branch={branch_id} latency_ms={(time.monotonic() - start_time)*1000:.1f}")
+                    
+                    # Physically delete the source branch after successful merge to keep metadata clean
+                    requests.delete(f"{self.server_url}/branches/{branch_id}").raise_for_status()
+                    
+                    logger.info(f"MERGE_SUCCESS branch={branch_id} (purged) latency_ms={(time.monotonic() - start_time)*1000:.1f}")
                     return True
                 else:
                     requests.delete(f"{self.server_url}/branches/{branch_id}").raise_for_status()
