@@ -135,24 +135,26 @@ def _fetch_efts_entries() -> list[dict]:
             file_date = src.get("file_date", "")
             adsh = src.get("adsh", "")
             results.append(
-                {
-                    "entry_id": f"efts:{hit['_id']}",
-                    "title": f"{form} - {entity}",
-                    "link": (
-                        f"https://www.sec.gov/cgi-bin/browse-edgar"
-                        f"?action=getcompany&CIK={cik}"
-                    )
-                    if cik
-                    else "",
-                    "summary": (
-                        f"{entity} filed {form} on {file_date}. "
-                        f"Items: {', '.join(src.get('items', []))}. "
-                        f"Accession: {adsh}"
-                    ),
-                    "filing_date": file_date,
-                    "feed_source": "efts",
-                }
+            {
+                "entry_id": f"efts:{hit['_id']}",
+                "title": f"{form} - {entity}",
+                "cik": cik,
+                "link": (
+                    f"https://www.sec.gov/cgi-bin/browse-edgar"
+                    f"?action=getcompany&CIK={cik}"
+                )
+                if cik
+                else "",
+                "summary": (
+                    f"{entity} filed {form} on {file_date}. "
+                    f"Items: {', '.join(src.get('items', []))}. "
+                    f"Accession: {adsh}"
+                ),
+                "filing_date": file_date,
+                "feed_source": "efts",
+            }
             )
+
         return results
     except Exception as exc:
         warnings.warn(f"EFTS fetch failed: {exc}")
@@ -234,6 +236,13 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
 
     raw_text = summary or title
     company_name, cik_number = _parse_atom_title(title)
+    
+    # If it's an EFTS feed, look for CIK in the row data directly if possible
+    # or handle the parsing logic
+    if row.get("feed_source") == "efts" and not cik_number:
+        # EFTS parsing logic was done in _fetch_efts_entries, but we need it here
+        # Actually, let's just pass CIK if it's in the row.
+        cik_number = row.get("cik") 
 
     if not company_name:
         warnings.warn(f"Skipping entry with empty company_name: {title!r}")
