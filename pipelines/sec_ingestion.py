@@ -235,15 +235,23 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
     filing_date_str: str = row.get("filing_date", "")
 
     raw_text = summary or title
+    
+    # 1. Extract CIK and base Company Name
     company_name, cik_number = _parse_atom_title(title)
     
-    # If it's an EFTS feed, look for CIK in the row data directly if possible
-    # or handle the parsing logic
-    if row.get("feed_source") == "efts" and not cik_number:
-        # EFTS parsing logic was done in _fetch_efts_entries, but we need it here
-        # Actually, let's just pass CIK if it's in the row.
-        cik_number = row.get("cik") 
+    # 2. Handle EFTS specifics: strip prefix and use row-provided CIK
+    if row.get("feed_source") == "efts":
+        # Strip "8-K - " or similar form prefixes from EFTS titles
+        # EFTS title format: "8-K - COMPANY NAME"
+        prefix_match = re.match(r"^[\w/\-]+ - (.*)$", company_name)
+        if prefix_match:
+            company_name = prefix_match.group(1).strip()
+            
+        # EFTS row already has extracted 'cik'
+        if not cik_number:
+            cik_number = row.get("cik")
 
+    # 3. Validation
     if not company_name:
         warnings.warn(f"Skipping entry with empty company_name: {title!r}")
         return None
