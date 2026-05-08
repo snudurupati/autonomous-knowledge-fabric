@@ -138,7 +138,7 @@ def execute_decisions_safe(server_url, decisions):
                 merge_resp = requests.post(f"{server_url}/branches/merge", json={
                     "source": branch_id,
                     "target": "main",
-                    "strategy": "fast-forward"
+                    "strategy": "merge"
                 })
                 merge_resp.raise_for_status()
                 merged = True
