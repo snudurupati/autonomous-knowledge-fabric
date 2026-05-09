@@ -172,3 +172,25 @@ Write Path Optimization & Omnigraph 0.4.1 Upgrade
     - **Context Read**: **< 1ms** (improved from 840ms by passing both `branch` and `snapshot` in API).
 - **Branch Management**: Successfully merged `omnigraph-upgrade-0.4.1` and froze `version-0.3.1` for historical baseline comparison.
 - **Documentation**: Updated `README.md` with the "S3 Commit Penalty" and "Pinned Snapshot" RCAs.
+
+## Sprint 22 - 2026-05-07
+
+### Sprint completed
+Resilient Batch Resolver, Fast-Path Restoration, and Storage Stability
+
+### What was built
+- **Batch Resolver Redesign**: Implemented the 'Resilient Sweeper' pattern to serialize metadata discovery, decouple LLM evaluation, and execute merges with an anti-409 retry loop to avoid 'False 404' metadata crashes in the local S3 emulator.
+- **Fast-Path Restoration**: Fixed regex matching for SEC EFTS feeds in `pipelines/sec_ingestion.py` so that `cik` identifiers properly trigger fast-path insertion to the main branch.
+- **Storage Stabilizations**: Tuned `OmnigraphSink` buffer configuration (flush_interval: 300s, batch_size: 25) to improve metadata stability in S3.
+- **Auto-Deletion**: Branch merging now guarantees the physical deletion (`DELETE /branches/{id}`) of both accepted and rejected branches.
+- **Persistent Scheduler**: Introduced `pipelines/scheduler.py` to repeatedly run the batch resolver every hour as a persistent background process.
+
+### What broke and how it was fixed
+- **Missing Atom transactions & Dangling Manifests**: S3 lack of atomic commits across manifests led to repository-breaking '409 Conflict' and 'stale view' deadlocks when processes crashed mid-commit. Fixed by adding a documented 'Wipe and Reload' recovery process in `ISSUE_REPORT.md`.
+- **Merge 409 Divergence Conflicts**: Fast-forward merges failed because the ingestion process advanced the main branch. Resolved by using the `merge` strategy instead of `fast-forward` combined with backoff logic.
+- **Local S3 404 Anomaly**: High-concurrency operations overwhelmed the emulator. Addressed by running metadata retrieval sequentially (`max_workers=1`).
+
+### Real output observed
+- **Resolver Benchmarks**: Branch resolution functions safely inside the 1-hour interval while preserving storage consistency.
+- **Latency Scaling Profiling**: Identified O(n) scaling for Pinned Snapshot Reads on local RustFS, validating that latency grows predictably (~450ms at 1 node, ~2.5s at 116 nodes). Previous sub-ms read claims corrected.
+
