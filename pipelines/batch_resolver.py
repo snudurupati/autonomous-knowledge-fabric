@@ -135,7 +135,7 @@ def execute_decisions_safe(server_url, decisions):
         
         for attempt in range(5):
             try:
-                merge_resp = requests.post(f"{server_url}/branches/merge", json={
+                merge_resp = requests.post(f"{server_url}/branches/merge?sync_branch=true", json={
                     "source": branch_id,
                     "target": "main",
                     "strategy": "merge"
