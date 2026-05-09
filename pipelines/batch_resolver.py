@@ -145,8 +145,23 @@ def execute_decisions_safe(server_url, decisions):
                 break
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 409:
-                    logger.warning(f"409 Conflict merging {branch_id} (Attempt {attempt+1}/5). Main branch moved. Retrying in 3s...")
-                    time.sleep(3)
+                    logger.warning(f"409 Conflict merging {branch_id} (Attempt {attempt+1}/5). Side-branch is stale. Attempting rebase...")
+                    try:
+                        # REBASE: Merge current 'main' back into the side-branch to update its base
+                        rebase_resp = requests.post(f"{server_url}/branches/merge?sync_branch=true", json={
+                            "source": "main",
+                            "target": branch_id,
+                            "strategy": "merge"
+                        })
+                        rebase_resp.raise_for_status()
+                        logger.info(f"Successfully rebased {branch_id}. Retrying merge...")
+                        # Small delay to allow rebase to settle on storage
+                        time.sleep(1.0)
+                        continue 
+                    except Exception as rebase_err:
+                        logger.error(f"Rebase failed for {branch_id}: {rebase_err}")
+                        # Fallback to standard wait-and-retry if rebase fails
+                        time.sleep(3)
                 else:
                     logger.error(f"HTTP Error merging {branch_id}: {e}")
                     break
