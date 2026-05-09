@@ -135,24 +135,26 @@ def _fetch_efts_entries() -> list[dict]:
             file_date = src.get("file_date", "")
             adsh = src.get("adsh", "")
             results.append(
-                {
-                    "entry_id": f"efts:{hit['_id']}",
-                    "title": f"{form} - {entity}",
-                    "link": (
-                        f"https://www.sec.gov/cgi-bin/browse-edgar"
-                        f"?action=getcompany&CIK={cik}"
-                    )
-                    if cik
-                    else "",
-                    "summary": (
-                        f"{entity} filed {form} on {file_date}. "
-                        f"Items: {', '.join(src.get('items', []))}. "
-                        f"Accession: {adsh}"
-                    ),
-                    "filing_date": file_date,
-                    "feed_source": "efts",
-                }
+            {
+                "entry_id": f"efts:{hit['_id']}",
+                "title": f"{form} - {entity}",
+                "cik": cik,
+                "link": (
+                    f"https://www.sec.gov/cgi-bin/browse-edgar"
+                    f"?action=getcompany&CIK={cik}"
+                )
+                if cik
+                else "",
+                "summary": (
+                    f"{entity} filed {form} on {file_date}. "
+                    f"Items: {', '.join(src.get('items', []))}. "
+                    f"Accession: {adsh}"
+                ),
+                "filing_date": file_date,
+                "feed_source": "efts",
+            }
             )
+
         return results
     except Exception as exc:
         warnings.warn(f"EFTS fetch failed: {exc}")
@@ -233,8 +235,23 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
     filing_date_str: str = row.get("filing_date", "")
 
     raw_text = summary or title
+    
+    # 1. Extract CIK and base Company Name
     company_name, cik_number = _parse_atom_title(title)
+    
+    # 2. Handle EFTS specifics: strip prefix and use row-provided CIK
+    if row.get("feed_source") == "efts":
+        # Strip "8-K - " or similar form prefixes from EFTS titles
+        # EFTS title format: "8-K - COMPANY NAME"
+        prefix_match = re.match(r"^[\w/\-]+ - (.*)$", company_name)
+        if prefix_match:
+            company_name = prefix_match.group(1).strip()
+            
+        # EFTS row already has extracted 'cik'
+        if not cik_number:
+            cik_number = row.get("cik")
 
+    # 3. Validation
     if not company_name:
         warnings.warn(f"Skipping entry with empty company_name: {title!r}")
         return None

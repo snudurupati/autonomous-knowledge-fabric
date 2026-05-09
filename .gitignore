@@ -10,3 +10,5 @@ __pycache__/
 .omnigraph-rustfs-demo/
 .venv-omnigraph/
 akf_resolver_cache.db
+skills-lock.json
+backups/

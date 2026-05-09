@@ -188,37 +188,6 @@ class OmnigraphSink:
         if hasattr(self, '_flush_thread'):
             self._flush_thread.join(timeout=2)
 
-    def evaluate_and_merge(self, branch_id: str, evidence_score: int, threshold: int = 70) -> bool:
-        """
-        Merges a side-branch into main if threshold met.
-        """
-        if branch_id == self.main_branch:
-            return True
-            
-        start_time = time.monotonic()
-        with tracer.start_as_current_span("pipeline.branch_merge") as span:
-            span.set_attribute("branch_id", branch_id)
-            span.set_attribute("evidence_score", evidence_score)
-            
-            try:
-                if evidence_score > threshold:
-                    merge_resp = requests.post(f"{self.server_url}/branches/merge", json={
-                        "source": branch_id,
-                        "target": self.main_branch,
-                        "strategy": "fast-forward"
-                    })
-                    merge_resp.raise_for_status()
-                    logger.info(f"MERGE_SUCCESS branch={branch_id} latency_ms={(time.monotonic() - start_time)*1000:.1f}")
-                    return True
-                else:
-                    requests.delete(f"{self.server_url}/branches/{branch_id}").raise_for_status()
-                    logger.warning(f"MERGE_DROPPED branch={branch_id}")
-                    return False
-            except Exception as e:
-                span.record_exception(e)
-                span.set_status(trace.Status(trace.StatusCode.ERROR))
-                logger.error(f"Merge failed for {branch_id}: {e}")
-                return False
 
 if __name__ == "__main__":
     from models.account_event import EventSource, RiskSignal
