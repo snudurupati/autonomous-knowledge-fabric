@@ -9,7 +9,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("backups/scheduler.log"),
+        logging.FileHandler("logs/scheduler.log"),
         logging.StreamHandler(sys.stdout)
     ]
 )

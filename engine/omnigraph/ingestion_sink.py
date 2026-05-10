@@ -162,10 +162,9 @@ class OmnigraphSink:
             success_count = 0
             for target_branch, events in branch_groups.items():
                 for idx, event in enumerate(events):
-                    # Only force branch sync on the final event of the batch for this branch
-                    should_sync = (idx == len(events) - 1)
+                    # Always force branch sync to prevent 409 Stale View on MinIO emulator
                     try:
-                        self._commit_now(event, branch=target_branch, sync_branch=should_sync)
+                        self._commit_now(event, branch=target_branch, sync_branch=True)
                         success_count += 1
                     except Exception as e:
                         logger.error(f"Batch item failed: {e}")

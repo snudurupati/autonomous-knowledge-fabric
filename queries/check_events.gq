@@ -1,0 +1,11 @@
+query check_events($name: String) {
+    match {
+        $a: Account { name: $name }
+        $a has_event $e
+        $e: AccountEvent
+    }
+    return {
+        $a.name,
+        $e.raw_text
+    }
+}

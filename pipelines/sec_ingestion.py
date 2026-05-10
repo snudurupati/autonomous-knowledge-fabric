@@ -172,6 +172,7 @@ class RawEntrySchema(pw.Schema):
     summary: str
     filing_date: str
     feed_source: str
+    cik: str
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +234,7 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
     title: str = row.get("title", "")
     summary: str = row.get("summary", "")
     filing_date_str: str = row.get("filing_date", "")
+    feed_source: str = row.get("feed_source", "unknown")
 
     raw_text = summary or title
     
@@ -240,9 +242,8 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
     company_name, cik_number = _parse_atom_title(title)
     
     # 2. Handle EFTS specifics: strip prefix and use row-provided CIK
-    if row.get("feed_source") == "efts":
+    if feed_source == "efts":
         # Strip "8-K - " or similar form prefixes from EFTS titles
-        # EFTS title format: "8-K - COMPANY NAME"
         prefix_match = re.match(r"^[\w/\-]+ - (.*)$", company_name)
         if prefix_match:
             company_name = prefix_match.group(1).strip()
@@ -250,6 +251,9 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
         # EFTS row already has extracted 'cik'
         if not cik_number:
             cik_number = row.get("cik")
+
+    if os.environ.get("AKF_DEBUG") == "1":
+        print(f"[debug] Extraction ({feed_source}): name='{company_name}' cik='{cik_number}' title='{title}'")
 
     # 3. Validation
     if not company_name:
@@ -267,6 +271,7 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
 
     try:
         return AccountEvent(
+            event_id=row.get("entry_id"), # Use the SEC's accession number or Atom link as the deterministic ID
             source=EventSource.SEC_EDGAR,
             company_name=company_name,
             cik_number=cik_number,

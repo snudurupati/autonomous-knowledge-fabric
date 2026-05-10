@@ -28,13 +28,18 @@ class OmnigraphRoutingManager:
         has_strong_signal = bool(event.cik_number or event.company_domain or event.account_id)
         
         if has_strong_signal:
-            logger.info(f"Fast-Path: Ingesting high-confidence event for {event.company_name} directly to main via buffer")
+            logger.info(f"Fast-Path: Ingesting high-confidence event for {event.company_name} directly to main")
+            # Temporarily disable buffering for this specific call to hit 'main'
+            original_buffering = self.sink.use_buffering
+            self.sink.use_buffering = False
             try:
                 self.sink.ingest_event(event)
                 return True
             except Exception as e:
                 logger.error(f"Fast-Path ingestion failed for {event.company_name}: {e}")
                 return False
+            finally:
+                self.sink.use_buffering = original_buffering
 
         # 2. Branch-Based Buffering: Weak signals start in their own branch
         branch_id = self.sink.ingest_unverified_entity(event)
