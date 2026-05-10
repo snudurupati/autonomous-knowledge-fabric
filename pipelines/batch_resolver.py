@@ -122,7 +122,7 @@ def execute_decisions_safe(server_url, decisions):
         if not decision.is_match:
             logger.info(f"[-] REJECTED {branch_id}. Reason: {decision.reasoning}. Purging branch...")
             try:
-                requests.delete(f"{server_url}/branches/{branch_id}").raise_for_status()
+                requests.delete(f"{server_url}/branches/{branch_id}", timeout=120).raise_for_status()
                 stats["rejected"] += 1
                 time.sleep(0.5) # Slight pause to prevent immediate 404s on next call
             except Exception as e:
@@ -139,7 +139,7 @@ def execute_decisions_safe(server_url, decisions):
                     "source": branch_id,
                     "target": "main",
                     "strategy": "merge"
-                })
+                }, timeout=120)
                 merge_resp.raise_for_status()
                 merged = True
                 break
@@ -152,7 +152,7 @@ def execute_decisions_safe(server_url, decisions):
                             "source": "main",
                             "target": branch_id,
                             "strategy": "merge"
-                        })
+                        }, timeout=120)
                         rebase_resp.raise_for_status()
                         logger.info(f"Successfully rebased {branch_id}. Retrying merge...")
                         # Small delay to allow rebase to settle on storage

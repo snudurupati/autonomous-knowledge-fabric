@@ -1,0 +1,11 @@
+query ingest_event_only($node_key: String, $event_id: String, $source: String, $timestamp: Date,
+                            $risk_signals: [String], $raw_text: String) {
+    insert AccountEvent {
+        event_id: $event_id,
+        source: $source,
+        timestamp: $timestamp,
+        risk_signals: $risk_signals,
+        raw_text: $raw_text
+    }
+    insert HAS_EVENT { from: $node_key, to: $event_id }
+}

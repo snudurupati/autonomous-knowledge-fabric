@@ -4,10 +4,10 @@ import signal
 import subprocess
 
 # Update with new PIDs
-# Server: 11538, Ingestion: 11576
-PIDS = [11538, 11576]
-LOG_FILES = ["backups/scheduler.log"]
-STATUS_FILE = "backups/WATCHDOG_STATUS.log"
+# Server: 45337, Scheduler: 45351, Ingestion: 45352
+PIDS = [45337, 45351, 45352]
+LOG_FILES = ["logs/scheduler.log"]
+STATUS_FILE = "logs/WATCHDOG_STATUS.log"
 
 def is_running(pid):
     try:

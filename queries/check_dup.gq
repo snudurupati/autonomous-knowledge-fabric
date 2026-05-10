@@ -1,0 +1,8 @@
+query check_dup($k: String) {
+    match {
+        $a: Account { node_key: $k }
+    }
+    return {
+        $a.name
+    }
+}
