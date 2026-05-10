@@ -1,3 +1,24 @@
+# ISSUE REPORT: [PIPELINE] Ingestion Congestion Collapse and Event Duplication
+
+## Status
+**Resolved** | Priority: Critical | Type: Data Integrity / Concurrency
+
+## Description
+The SEC ingestion pipeline experienced a massive drop in throughput (26 accounts over 10 hours vs. 116 in 8 hours previously) and generated massive amounts of duplicate `AccountEvent` nodes (300+ events for 41 accounts) without generating duplicate `Account` nodes. Additionally, nearly all SEC events were misclassified as "Weak Signals" and routed to side-branches (987 branches created).
+
+### Root Cause Analysis (RCA)
+This was caused by three compounding regressions:
+1. **Schema Omission (`cik` dropped):** The `RawEntrySchema` in Pathway lacked the `cik` field. Pathway silently dropped CIK numbers from EFTS feeds, causing the `RoutingManager` to misclassify 85%+ of filings as "Weak Signals" and generate hundreds of unnecessary side-branches.
+2. **Buffer Congestion Collapse:** Fast-Path events were forced into a 5-minute batch buffer. When flushed, 25 sequential writes hit the local MinIO emulator. Because `sync_branch=False` was used to optimize speed, the first write succeeded and the subsequent 24 failed with a `409 Stale View` deadlock on the `main` branch. This destroyed throughput.
+3. **TTL Amnesia & Random UUIDs:** The pipeline's in-memory `seen` cache clears every hour (`SEEN_TTL_SECS`). When polling a static weekend SEC feed, the pipeline re-read the same filings. Because `AccountEvent` used a `uuid4()` default factory, every re-read generated a brand-new random ID. Omnigraph's `@key` constraint deduplicated the `Account` nodes correctly, but created duplicate `AccountEvent` nodes because the IDs were new.
+
+## Resolution
+1. **Schema Fix:** Added `cik: str` to `RawEntrySchema` to ensure identifiers propagate and trigger the Fast-Path.
+2. **Fast-Path Bypass:** Restored logic to temporarily disable buffering (`self.sink.use_buffering = False`) for Strong Signals, preventing batch congestion and `409` errors.
+3. **Deterministic Event IDs:** Modified `AccountEvent` to generate a deterministic MD5 hash of `(source + company_name + raw_text)`. Omnigraph's native `@key` constraint now catches all duplicate events in O(1) time.
+
+---
+
 # ISSUE REPORT: [BACKEND] Branch Manifest Version Drift (Phantom Table Versions)
 
 ## Status
