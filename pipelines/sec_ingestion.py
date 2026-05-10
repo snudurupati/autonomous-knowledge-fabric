@@ -343,10 +343,34 @@ def _on_change(key: pw.Pointer, row: dict, time: int, is_addition: bool) -> None
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    subject = SECFeedSubject()
-    table = pw.io.python.read(subject, schema=RawEntrySchema, format="json")
-    pw.io.subscribe(table, on_change=_on_change)
-    pw.run()
+    import signal
+    import sys
+
+    # Handle SIGTERM (standard kill) gracefully
+    def handle_sigterm(signum, frame):
+        print(f"\n[shutdown] Received signal {signum}, initiating graceful exit...")
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
+
+    try:
+        subject = SECFeedSubject()
+        table = pw.io.python.read(subject, schema=RawEntrySchema, format="json")
+        pw.io.subscribe(table, on_change=_on_change)
+        print("🚀 SEC Ingestion Pipeline started. Press Ctrl+C to stop.")
+        pw.run()
+    except (KeyboardInterrupt, SystemExit):
+        print("\n[shutdown] Pipeline execution interrupted.")
+    finally:
+        print("📥 Finalizing Omnigraph ingestion (flushing buffers)...")
+        try:
+            # Access the singleton manager and flush its sink
+            manager = get_routing_manager()
+            manager.sink.flush()
+            print("✅ All buffered events successfully committed to Omnigraph.")
+        except Exception as e:
+            print(f"❌ Error during final flush: {e}")
+        print("👋 Shutdown complete.")
 
 
 if __name__ == "__main__":
