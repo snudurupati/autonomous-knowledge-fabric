@@ -1,3 +1,35 @@
+# ISSUE REPORT: [BACKEND] Branch Manifest Version Drift (Phantom Table Versions)
+
+## Status
+**Open** | Priority: Critical | Type: Backend / Concurrency
+
+## Description
+A specific type of corruption occurs when side-branches are used heavily. The repository's **Root Manifest** (which tracks the state of the entire branch) becomes desynchronized from the individual **Table Manifests** (which track Account, AccountEvent, etc.). This leads to a persistent "Stale View" deadlock that survives server restarts.
+
+### Symptoms & Error Messages
+Even with a single writer and `sync_branch=true` enabled, operations fail with:
+```text
+stale view of 'node:Account': expected manifest table version 724 but current is 726 — refresh and retry
+```
+Crucially, the `omnigraph snapshot` tool (the "Root View") reports version **724**, while the error message from the storage engine (the "Table View") claims the version is actually **726**.
+
+### Root Cause Analysis (RCA): The "Phantom Table Version"
+1.  **Partial Transaction Success**: During a commit to a side-branch, Omnigraph must update multiple tables. Due to the lack of a cross-table atomic "Write-Ahead Log" in the current storage version, it is possible for a **Table Manifest** to be successfully written to S3 while the **Root Manifest Update** fails (e.g., due to a socket timeout or emulator lag).
+2.  **The Drift**: The table now physically exists at Version 726 on disk/S3. However, the branch's "Table of Contents" (the Root Manifest) still thinks that table is at Version 724.
+3.  **The Deadlock**: 
+    *   Any new write request checks the Root Manifest and says "I'm starting from 724, the next version should be 725." 
+    *   The Lance storage engine checks the physical files, sees 726 already exists, and throws a `409 Conflict`.
+    *   Since the Root Manifest never "saw" 725 or 726, it can never advance itself to match the physical reality.
+
+### Why this happens on MinIO
+While MinIO solved the "False 404" issues of RustFS, it cannot fix the **logical atomicity gap** in the Omnigraph backend. If a Python process (the Ingestion or Resolver) terminates or times out during the multi-file commit handshake, the "Phantom Version" is created regardless of how robust the S3 provider is.
+
+## Workaround / Mitigation
+1.  **Metadata Pruning**: Use `omnigraph cleanup --keep 1 --confirm` to attempt to force the storage layer to align with the current root manifest. (Effectiveness: ~30%)
+2.  **Rescue & Rebuild**: Perform the **Full Wipe & Reload** procedure (Step 1-7 in the previous report). This is the only 100% reliable fix once drift has occurred.
+
+---
+
 # ISSUE REPORT: [ARCHITECTURAL] Lack of Atomic Transactions (Dangling Manifest Corruption)
 
 ## Status
