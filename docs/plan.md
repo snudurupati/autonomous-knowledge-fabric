@@ -2,9 +2,9 @@
 
 ## Context
 - **Last Session:** Sprint 17 complete (2026-04-28)
-- **Current Goal:** Sprint 18 — Branch-based Corroboration
+- **Current Goal:** Sprint 23 — Advanced Analytics and Graph Intelligence
 - **Tech Stack:** Pathway, Omnigraph, Boto3, Pydantic, OpenTelemetry
-- **Branch:** architecture/omnigraph-pivot
+- **Branch:** sprint-23
 
 ## Completed Sprints
 
@@ -27,10 +27,10 @@
 - [x] Sprint 17 — Omnigraph Ingestion Sink (Sprint 17)
 - [x] Sprint 18 - Omnigrapg .gq Configuration Pivot & Read API Benchmarking
 - [x] Sprint 20 — Write Path Optimization & Omnigraph 0.4.1 Upgrade
+- [x] Sprint 22 — Resilient Batch Resolver, Fast-Path Restoration, and Storage Stability
 
 ## Upcoming Sprints
-- [ ] Sprint 18 — Branch-based Corroboration
-- [ ] Sprint 19 — LLM Resolver Integration with Omnigraph Side-Branches
+- [ ] Sprint 23 — Advanced Analytics and Graph Intelligence
 
 ## Risk Score Weights
 | Signal | Weight |

@@ -64,3 +64,8 @@ Omnigraph operates on an immutable, append-only S3-native architecture built on 
 ## Observability Conventions
 * `latency_tracker` is an in-process singleton. Cross-process state is exchanged via `$TMPDIR/akf_latency_stats.json`.
 * OTel span naming: Use `pipeline.branch_create`, `pipeline.branch_merge`, `pipeline.event`.
+
+## Storage & Concurrency Conventions
+* **Local RustFS Limitations:** The local S3 emulator (RustFS) struggles with high metadata concurrency, leading to "False 404s" and "NoSuchBucket" anomalies. Do NOT use multi-threading (`ThreadPoolExecutor`) for metadata operations (`snapshot`, `read`); use sequential processing (`max_workers=1`).
+* **Non-Atomic Commits & Corruption:** Omnigraph's Lance backend lacks atomic transactions across manifests and branch pointers. Mid-commit crashes cause "Dangling Manifest" corruption (`expected manifest table version X but current is Y`). The only recovery is a destructive Wipe & Reload of the repository.
+* **Merge Strategy & Contention:** When merging side-branches, use the `merge` strategy (not `fast-forward`) to handle divergent histories. Expect `409 Conflict` errors due to S3 consistency lag and active ingestions; handle them with a backoff-retry loop and a mandatory post-merge settle delay (e.g., 1.5s).

@@ -135,7 +135,7 @@ def execute_decisions_safe(server_url, decisions):
         
         for attempt in range(5):
             try:
-                merge_resp = requests.post(f"{server_url}/branches/merge", json={
+                merge_resp = requests.post(f"{server_url}/branches/merge?sync_branch=true", json={
                     "source": branch_id,
                     "target": "main",
                     "strategy": "merge"
@@ -145,8 +145,23 @@ def execute_decisions_safe(server_url, decisions):
                 break
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 409:
-                    logger.warning(f"409 Conflict merging {branch_id} (Attempt {attempt+1}/5). Main branch moved. Retrying in 3s...")
-                    time.sleep(3)
+                    logger.warning(f"409 Conflict merging {branch_id} (Attempt {attempt+1}/5). Side-branch is stale. Attempting rebase...")
+                    try:
+                        # REBASE: Merge current 'main' back into the side-branch to update its base
+                        rebase_resp = requests.post(f"{server_url}/branches/merge?sync_branch=true", json={
+                            "source": "main",
+                            "target": branch_id,
+                            "strategy": "merge"
+                        })
+                        rebase_resp.raise_for_status()
+                        logger.info(f"Successfully rebased {branch_id}. Retrying merge...")
+                        # Small delay to allow rebase to settle on storage
+                        time.sleep(1.0)
+                        continue 
+                    except Exception as rebase_err:
+                        logger.error(f"Rebase failed for {branch_id}: {rebase_err}")
+                        # Fallback to standard wait-and-retry if rebase fails
+                        time.sleep(3)
                 else:
                     logger.error(f"HTTP Error merging {branch_id}: {e}")
                     break
@@ -155,15 +170,18 @@ def execute_decisions_safe(server_url, decisions):
                 break
         
         if merged:
-            logger.info(f"✅ SUCCESS: Merged {branch_id}. Purging source branch...")
+            logger.info(f"✅ SUCCESS: Merged {branch_id}. Cooling down before purge...")
+            # SETTLE DELAY: Give the local S3 emulator time to finish manifest writes
+            time.sleep(2.0)
+            
             try:
-                requests.delete(f"{server_url}/branches/{branch_id}").raise_for_status()
+                requests.delete(f"{server_url}/branches/{branch_id}", timeout=60).raise_for_status()
+                logger.info(f"🗑️ Purged source branch {branch_id}")
                 stats["merged"] += 1
             except Exception as e:
                 logger.error(f"Failed to delete merged branch {branch_id}: {e}")
             
-            # MANDATORY SETTLE DELAY
-            # Gives local RustFS emulator time to update main manifest before next loop
+            # MANDATORY POST-PURGE SETTLE DELAY
             time.sleep(1.5)
         else:
             logger.error(f"❌ FAILED: Exhausted retries or hard error merging {branch_id}.")

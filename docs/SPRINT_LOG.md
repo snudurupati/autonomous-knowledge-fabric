@@ -172,3 +172,26 @@ Write Path Optimization & Omnigraph 0.4.1 Upgrade
     - **Context Read**: **< 1ms** (improved from 840ms by passing both `branch` and `snapshot` in API).
 - **Branch Management**: Successfully merged `omnigraph-upgrade-0.4.1` and froze `version-0.3.1` for historical baseline comparison.
 - **Documentation**: Updated `README.md` with the "S3 Commit Penalty" and "Pinned Snapshot" RCAs.
+
+## Sprint 22 - 2026-05-10
+
+### Sprint completed
+Production-Grade Storage (MinIO), Resilient Resolver, and Graceful Handshakes
+
+### What was built
+- **MinIO Migration**: Successfully migrated the repository from local RustFS to a standalone MinIO server, resolving local filesystem metadata bottlenecks and improving consistency.
+- **Rebase-on-Conflict Pattern**: Upgraded `pipelines/batch_resolver.py` to handle "Self-Conflicts." If a merge fails with a 409 error, the resolver now automatically rebases the side-branch by merging 'main' into it before retrying.
+- **Graceful Shutdown Protocol**: Implemented a `SIGTERM` trap in `pipelines/sec_ingestion.py` that forces an immediate `sink.flush()`. This ensures that all buffered events are committed and metadata handshakes are completed before process exit.
+- **Watchdog Utility**: Created `pipelines/watchdog.py` to provide fail-safe monitoring of the server, ingestion, and scheduler processes, with automatic shutdown on error detection.
+- **Metadata Repair Playbook**: Documented the RCA and recovery steps for "Phantom Table Versions" in `ISSUE_REPORT.md`, providing a clear path to resolve manifest drift.
+
+### What broke and how it was fixed
+- **Phantom Table Version Deadlock**: Identified a scenario where individual table manifests advanced while the root manifest lagged due to ungraceful shutdowns. Fixed by implementing the Graceful Shutdown protocol and performing a one-time "Export-Wipe-Reload" repair on the `crm-neo` repository.
+- **Resolver Sequential Drift**: High-volume resolver runs created version gaps that invalidated pending fragments. Fixed via the "Rebase-on-Conflict" logic.
+- **Local S3 Deletion Latency**: Local emulators dropped connections during recursive branch deletions. Mitigated by adding a 2-second "Cool Down" settle delay and increasing request timeouts to 60s.
+
+### Real output observed
+- **Resolver Stability**: Successfully merged fragments into a clean `crm-neo` repository without 409 errors or connection aborts.
+- **Repository Integrity**: Proved zero manifest drift across multiple hours of continuous SEC ingestion and hourly resolution cycles.
+- **Scale**: Account count successfully expanded from a 5-node demo to a 27+ node real-world graph during SEC stress tests.
+
