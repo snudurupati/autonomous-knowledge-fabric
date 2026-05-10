@@ -285,6 +285,18 @@ To maintain 24/7 ingestion reliability, we implemented a **Fast-Path** logic for
 
 ---
 
+## 🛠️ Operational Reliability
+
+### Graceful Shutdown (Ingestion Pipeline)
+
+The `sec_ingestion.py` pipeline utilizes an in-memory buffer to optimize S3 write performance. To prevent **Manifest Version Drift** (where table manifests advance beyond the root manifest), the pipeline must be stopped gracefully:
+
+*   **Mechanism:** The pipeline traps `SIGTERM` and `SIGINT` (Ctrl+C). Upon receiving these signals, it triggers a final synchronous `sink.flush()` to ensure all in-flight data and metadata handshakes are completed before the process exits.
+*   **Command:** `kill -15 <PID>` (or `Ctrl+C` in foreground).
+*   **Verification:** Look for `✅ All buffered events successfully committed to Omnigraph` in the logs to confirm a clean exit.
+
+**Rationale:** "Hard kills" (`kill -9`) mid-commit frequently created "Phantom Table Versions"—states where a table physically advanced on S3 but the Root Manifest was never updated. This caused persistent `409 Stale View` deadlocks.
+
 ## 📁 Repository Structure
 
 ```

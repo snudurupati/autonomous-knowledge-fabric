@@ -173,24 +173,25 @@ Write Path Optimization & Omnigraph 0.4.1 Upgrade
 - **Branch Management**: Successfully merged `omnigraph-upgrade-0.4.1` and froze `version-0.3.1` for historical baseline comparison.
 - **Documentation**: Updated `README.md` with the "S3 Commit Penalty" and "Pinned Snapshot" RCAs.
 
-## Sprint 22 - 2026-05-07
+## Sprint 22 - 2026-05-10
 
 ### Sprint completed
-Resilient Batch Resolver, Fast-Path Restoration, and Storage Stability
+Production-Grade Storage (MinIO), Resilient Resolver, and Graceful Handshakes
 
 ### What was built
-- **Batch Resolver Redesign**: Implemented the 'Resilient Sweeper' pattern to serialize metadata discovery, decouple LLM evaluation, and execute merges with an anti-409 retry loop to avoid 'False 404' metadata crashes in the local S3 emulator.
-- **Fast-Path Restoration**: Fixed regex matching for SEC EFTS feeds in `pipelines/sec_ingestion.py` so that `cik` identifiers properly trigger fast-path insertion to the main branch.
-- **Storage Stabilizations**: Tuned `OmnigraphSink` buffer configuration (flush_interval: 300s, batch_size: 25) to improve metadata stability in S3.
-- **Auto-Deletion**: Branch merging now guarantees the physical deletion (`DELETE /branches/{id}`) of both accepted and rejected branches.
-- **Persistent Scheduler**: Introduced `pipelines/scheduler.py` to repeatedly run the batch resolver every hour as a persistent background process.
+- **MinIO Migration**: Successfully migrated the repository from local RustFS to a standalone MinIO server, resolving local filesystem metadata bottlenecks and improving consistency.
+- **Rebase-on-Conflict Pattern**: Upgraded `pipelines/batch_resolver.py` to handle "Self-Conflicts." If a merge fails with a 409 error, the resolver now automatically rebases the side-branch by merging 'main' into it before retrying.
+- **Graceful Shutdown Protocol**: Implemented a `SIGTERM` trap in `pipelines/sec_ingestion.py` that forces an immediate `sink.flush()`. This ensures that all buffered events are committed and metadata handshakes are completed before process exit.
+- **Watchdog Utility**: Created `pipelines/watchdog.py` to provide fail-safe monitoring of the server, ingestion, and scheduler processes, with automatic shutdown on error detection.
+- **Metadata Repair Playbook**: Documented the RCA and recovery steps for "Phantom Table Versions" in `ISSUE_REPORT.md`, providing a clear path to resolve manifest drift.
 
 ### What broke and how it was fixed
-- **Missing Atom transactions & Dangling Manifests**: S3 lack of atomic commits across manifests led to repository-breaking '409 Conflict' and 'stale view' deadlocks when processes crashed mid-commit. Fixed by adding a documented 'Wipe and Reload' recovery process in `ISSUE_REPORT.md`.
-- **Merge 409 Divergence Conflicts**: Fast-forward merges failed because the ingestion process advanced the main branch. Resolved by using the `merge` strategy instead of `fast-forward` combined with backoff logic.
-- **Local S3 404 Anomaly**: High-concurrency operations overwhelmed the emulator. Addressed by running metadata retrieval sequentially (`max_workers=1`).
+- **Phantom Table Version Deadlock**: Identified a scenario where individual table manifests advanced while the root manifest lagged due to ungraceful shutdowns. Fixed by implementing the Graceful Shutdown protocol and performing a one-time "Export-Wipe-Reload" repair on the `crm-neo` repository.
+- **Resolver Sequential Drift**: High-volume resolver runs created version gaps that invalidated pending fragments. Fixed via the "Rebase-on-Conflict" logic.
+- **Local S3 Deletion Latency**: Local emulators dropped connections during recursive branch deletions. Mitigated by adding a 2-second "Cool Down" settle delay and increasing request timeouts to 60s.
 
 ### Real output observed
-- **Resolver Benchmarks**: Branch resolution functions safely inside the 1-hour interval while preserving storage consistency.
-- **Latency Scaling Profiling**: Identified O(n) scaling for Pinned Snapshot Reads on local RustFS, validating that latency grows predictably (~450ms at 1 node, ~2.5s at 116 nodes). Previous sub-ms read claims corrected.
+- **Resolver Stability**: Successfully merged fragments into a clean `crm-neo` repository without 409 errors or connection aborts.
+- **Repository Integrity**: Proved zero manifest drift across multiple hours of continuous SEC ingestion and hourly resolution cycles.
+- **Scale**: Account count successfully expanded from a 5-node demo to a 27+ node real-world graph during SEC stress tests.
 
