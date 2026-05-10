@@ -271,6 +271,7 @@ def _row_to_account_event(row: dict) -> Optional[AccountEvent]:
 
     try:
         return AccountEvent(
+            event_id=row.get("entry_id"), # Use the SEC's accession number or Atom link as the deterministic ID
             source=EventSource.SEC_EDGAR,
             company_name=company_name,
             cik_number=cik_number,

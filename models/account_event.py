@@ -31,8 +31,10 @@ class RiskSignal(str, Enum):
     DELISTING_RISK = "DELISTING_RISK"
 
 
+import hashlib
+
 class AccountEvent(BaseModel):
-    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    event_id: Optional[str] = None
     source: EventSource
     company_name: str
     company_domain: Optional[str] = None
@@ -49,4 +51,12 @@ class AccountEvent(BaseModel):
         v = v.strip().lower()
         v = _LEGAL_SUFFIXES.sub("", v).strip().rstrip(",").strip()
         return v
+        
+    @model_validator(mode="after")
+    def generate_deterministic_id(self) -> "AccountEvent":
+        if not self.event_id:
+            # Create a deterministic ID based on source, company, and raw text
+            unique_string = f"{self.source.value}:{self.company_name}:{self.raw_text}"
+            self.event_id = hashlib.md5(unique_string.encode('utf-8')).hexdigest()
+        return self
 

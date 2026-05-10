@@ -3,11 +3,22 @@ import time
 import signal
 import subprocess
 
-# Update with new PIDs
-# Server: 45337, Scheduler: 45351, Ingestion: 45352
-PIDS = [45337, 45351, 45352]
 LOG_FILES = ["logs/scheduler.log"]
 STATUS_FILE = "logs/WATCHDOG_STATUS.log"
+
+def get_pids():
+    pids = []
+    # Processes to monitor
+    commands = ["omnigraph-server", "sec_ingestion.py", "scheduler.py"]
+    for cmd in commands:
+        try:
+            output = subprocess.check_output(['pgrep', '-f', cmd]).decode().strip()
+            for pid_str in output.split('\n'):
+                if pid_str:
+                    pids.append(int(pid_str))
+        except subprocess.CalledProcessError:
+            pass # No process found
+    return pids
 
 def is_running(pid):
     try:
@@ -28,33 +39,41 @@ def check_errors():
                 pass
     return False, ""
 
-def stop_all():
-    for pid in PIDS:
+def stop_all(pids):
+    for pid in pids:
         if is_running(pid):
             try:
                 os.kill(pid, signal.SIGTERM)
             except OSError:
                 pass
 
-with open(STATUS_FILE, "w") as f:
-    f.write(f"Watchdog started at {time.ctime()} monitoring PIDs {PIDS}\n")
-
-while True:
-    running_pids = [pid for pid in PIDS if is_running(pid)]
+def main():
+    # Allow time for all background processes to start before capturing PIDs
+    time.sleep(15)
+    initial_pids = get_pids()
     
-    # If server or ingestion died
-    if len(running_pids) < len(PIDS):
-        with open(STATUS_FILE, "a") as f:
-            f.write(f"[{time.ctime()}] STOPPING: One or more processes died. Running: {running_pids}\n")
-        stop_all()
-        break
+    with open(STATUS_FILE, "w") as f:
+        f.write(f"Watchdog started at {time.ctime()} monitoring PIDs {initial_pids}\n")
+
+    while True:
+        current_pids = [pid for pid in initial_pids if is_running(pid)]
         
-    # Check for errors
-    error_found, reason = check_errors()
-    if error_found:
-        with open(STATUS_FILE, "a") as f:
-            f.write(f"[{time.ctime()}] STOPPING: {reason}\n")
-        stop_all()
-        break
-        
-    time.sleep(60)
+        # If any of the initially tracked processes died
+        if len(current_pids) < len(initial_pids):
+            with open(STATUS_FILE, "a") as f:
+                f.write(f"[{time.ctime()}] STOPPING: One or more processes died. Expected {len(initial_pids)} but found {len(current_pids)} running.\n")
+            stop_all(current_pids)
+            break
+            
+        # Check for errors in logs
+        error_found, reason = check_errors()
+        if error_found:
+            with open(STATUS_FILE, "a") as f:
+                f.write(f"[{time.ctime()}] STOPPING: {reason}\n")
+            stop_all(current_pids)
+            break
+            
+        time.sleep(60)
+
+if __name__ == "__main__":
+    main()
