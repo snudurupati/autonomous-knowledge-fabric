@@ -176,3 +176,26 @@ Use `--mode overwrite` to start with a single, clean manifest version.
 | **Full (116 nodes)** | ~2,500ms |
 
 **Root Cause**: Local S3 emulation overhead. Production NVMe/In-Memory storage is required for sub-ms read SLAs.
+
+---
+
+# ISSUE REPORT: [OMNIGRAPH ENGINE] Inability to Retroactively Add Edge Constraints
+
+## Status
+**Open** | Priority: Medium | Type: Schema Evolution / Migration
+
+## Description
+Omnigraph schema migrations (v1) do not support adding constraints (e.g., `@unique(src, dst)`) to pre-existing edge types after they have been initialized in the graph.
+
+### Symptoms & Error Messages
+When running `omnigraph schema plan` after adding `@unique(src, dst)` to an existing edge, the planner rejects the migration with the following error:
+```text
+supported: no
+- unsupported change on edge:<EdgeName>: adding constraint 'unique:dst,src' to '<EdgeName>' is not supported in schema migration v1
+```
+
+### Root Cause Analysis (RCA)
+The Omnigraph 0.4.1 migration engine (`schema migration v1`) currently lacks the internal mechanisms to validate and retroactively enforce uniqueness constraints against existing graph edge data.
+
+## Workaround / Mitigation
+Currently, edge constraints must be defined prior to the initial schema `apply`. If they are missed, uniqueness must be handled entirely in the application layer, or the repository must be wiped and re-initialized from scratch.
