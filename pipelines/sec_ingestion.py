@@ -115,6 +115,7 @@ def _fetch_atom_entries() -> list[dict]:
                 "summary": _strip_html(summary_raw),
                 "filing_date": e.get("updated", ""),
                 "feed_source": "atom",
+                "cik": "",
             }
         )
     return results
