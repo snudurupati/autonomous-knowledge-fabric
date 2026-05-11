@@ -192,16 +192,25 @@ class SECFeedSubject(pw.io.python.ConnectorSubject):
     """Polls both SEC feeds every POLL_INTERVAL_SECS; deduplicates by entry_id."""
 
     def run(self) -> None:
-        seen: dict[str, float] = {}  # entry_id -> timestamp
+        import json
+        seen_file = "logs/seen_cache.json"
+        try:
+            with open(seen_file, "r") as f:
+                seen = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            seen = {}  # entry_id -> timestamp
+
         while True:
-            now = time_module.monotonic()
+            now = time_module.time()
             
             # 1. Cleanup old entries to prevent memory leaks
             expired_seen = [eid for eid, ts in seen.items() if now - ts > SEEN_TTL_SECS]
             for eid in expired_seen:
                 seen.pop(eid)
             
-            expired_submitted = [eid for eid, ts in _submitted_ts.items() if now - ts > SUBMITTED_TTL_SECS]
+            # Use monotonic for local submission tracking to avoid clock skew issues
+            mono_now = time_module.monotonic()
+            expired_submitted = [eid for eid, ts in _submitted_ts.items() if mono_now - ts > SUBMITTED_TTL_SECS]
             for eid in expired_submitted:
                 _submitted_ts.pop(eid)
 
@@ -210,11 +219,13 @@ class SECFeedSubject(pw.io.python.ConnectorSubject):
             new_count = 0
             for entry in batch:
                 eid = entry["entry_id"]
-                if eid and eid not in seen:
+                if eid:
+                    if eid not in seen:
+                        _submitted_ts[eid] = mono_now
+                        self.next_json(entry)
+                        new_count += 1
+                    # Refresh TTL as long as it's still in the feed
                     seen[eid] = now
-                    _submitted_ts[eid] = now
-                    self.next_json(entry)
-                    new_count += 1
             
             if new_count > 0:
                 print(
@@ -222,6 +233,10 @@ class SECFeedSubject(pw.io.python.ConnectorSubject):
                     f"{new_count} new, {len(seen)} total seen",
                     flush=True,
                 )
+                # Persist state
+                os.makedirs("logs", exist_ok=True)
+                with open(seen_file, "w") as f:
+                    json.dump(seen, f)
             time_module.sleep(POLL_INTERVAL_SECS)
 
 
