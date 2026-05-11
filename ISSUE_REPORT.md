@@ -199,3 +199,22 @@ The Omnigraph 0.4.1 migration engine (`schema migration v1`) currently lacks the
 
 ## Workaround / Mitigation
 Currently, edge constraints must be defined prior to the initial schema `apply`. If they are missed, uniqueness must be handled entirely in the application layer, or the repository must be wiped and re-initialized from scratch.
+
+---
+
+# ISSUE REPORT: [OMNIGRAPH ENGINE] Edge Uniqueness Constraints Ignored on Insertion
+
+## Status
+**Open** | Priority: High | Type: Storage Engine / Core
+
+## Description
+Even when a `@unique(src, dst)` constraint is successfully applied to a graph schema at initialization, Omnigraph 0.4.1 does not actually enforce this constraint during query insertions. Duplicate edges can still be created between identical nodes.
+
+### Symptoms
+When executing `insert HAS_EVENT { from: $src, to: $dst }` multiple times with the exact same variables, the query succeeds each time without returning a conflict or constraint error, resulting in duplicate edges in the database.
+
+### Root Cause Analysis (RCA)
+Omnigraph v0.4.1 parses and stores the `@unique` constraint in the schema definition but lacks the runtime validation layer during edge insertion (`.txn` commit phase) to query existing edges and enforce uniqueness.
+
+## Workaround / Mitigation
+Edge uniqueness cannot be relied upon at the database level. Client applications must ensure idempotency (e.g., via persistent local caches) to prevent duplicate insertion queries from being sent to the server.
