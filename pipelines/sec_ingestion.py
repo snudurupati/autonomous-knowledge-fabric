@@ -184,8 +184,8 @@ class RawEntrySchema(pw.Schema):
 # can compute fetch_ms = time from submission to handler dispatch.
 _submitted_ts: dict[str, float] = {}
 
-# TTL for memory safety: 1 hour for seen entries, 10 minutes for submission timestamps.
-SEEN_TTL_SECS = 3600
+# TTL for memory safety: 30 days for seen entries, 10 minutes for submission timestamps.
+SEEN_TTL_SECS = 2592000
 SUBMITTED_TTL_SECS = 600
 
 class SECFeedSubject(pw.io.python.ConnectorSubject):
