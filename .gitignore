@@ -13,3 +13,4 @@ akf_resolver_cache.db
 skills-lock.json
 backups/
 logs/
+visualizations/graph_viz.html
