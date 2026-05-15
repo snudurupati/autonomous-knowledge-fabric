@@ -3,7 +3,7 @@
 
 graphs:
   local_s3:
-    uri: s3://omnigraph-local/crm-repo
+    uri: s3://omnigraph-local/crm-repoV2
 
 server:
   graph: local_s3
